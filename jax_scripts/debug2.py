@@ -56,7 +56,7 @@ data = jnp.load("turb.npz")
 fs = data['fs']
 
 #MATLAB indices I picked from visually inspecting the recurrence diagram.
-idx = [32, 82]
+idx = [147, 189]
 f = fs[idx[0], :, :, :]
 f = jnp.fft.irfft2(f)
 
@@ -76,14 +76,16 @@ sx = 0.0
 #Create a dictionary of optimizable field
 input_dict = {"fields": f, "T": T, "sx": sx}
 
-#load a previous guess
-matlab_data = loadmat("data/RPO_candidate_4152.mat")
-input_dict = {"fields": matlab_data['fields'], "T": matlab_data['T'][0][0], "sx": matlab_data['sx'][0][0] }
-
-
 #Add the number of steps we need
 param_dict.update({ 'steps': ministeps * (idx[1] - idx[0]) } )
 
+
+
+
+#load a previous guess
+matlab_data = loadmat("data/RPO_candidate_72.mat")
+input_dict = {"fields": matlab_data['fields'], "T": matlab_data['T'][0][0], "sx": matlab_data['sx'][0][0] }
+param_dict['steps'] = 1600
 
 
 ################################
@@ -141,10 +143,27 @@ def load_jax_dict(filename):
 #Attempt Newton-Raphson iteration. God be kind, forgive me for the sins I am about to commit.
 
 
-input_dict = load_jax_dict("newton/2.bin.npz")
+input_dict = load_jax_dict("newton/53.bin.npz")
+
+
+macrosteps = param_dict['steps'] // ministeps
+        
+f = input_dict["fields"]
+T = input_dict['T']
+dt= T/param_dict['steps']
+
+update = jax.jit( lambda f: mhd_jax.eark4(f, dt, ministeps, param_dict) )
+
+f = jnp.fft.rfft2(f)
+savemat( f"timeseries/0.mat", {"f": jnp.fft.irfft2(f), "T": T, "sx": input_dict["sx"] } )
+for i in range(macrosteps):
+    f = update(f)
+    savemat( f"timeseries/{i+1}.mat", {"f": jnp.fft.irfft2(f), "T": T, "sx": input_dict["sx"] } )
+exit()
+
 
 maxit = 128
-inner = 128*3    
+inner = 64
 outer = 1
 damp  = 1.0
 
@@ -186,7 +205,7 @@ for i in range(maxit):
     stop = time.time()
     gmreswalltime = stop - start
 
-    print(f"Iteration {i}: |f| = {jnp.linalg.norm(f_vec)}, fwalltime = {fwalltime}, gmres time = {gmreswalltime}")
+    print(f"Iteration {i}: |f| = {jnp.mean(jnp.square(f_vec))}, fwalltime = {fwalltime}, gmres time = {gmreswalltime}")
     
     #update the input_dict
     x, unravel_fn = jax.flatten_util.ravel_pytree( input_dict )

@@ -14,10 +14,13 @@ from scipy.io import savemat
 
 n  = 128
 dt = 0.005
-transient_steps = 8*1024
-steps = 256
+#transient_steps = 8*1024
+#steps = 1024
 ministeps = 32
 precision = jnp.float64
+
+transient_steps = 16*1024
+steps = 512
 
 nu  = 1/40
 eta = 1/40
@@ -42,8 +45,8 @@ param_dict.update( {'nu': nu, 'eta': eta, 'b0': b0, 'forcing': forcing} )
 
 # Initial data
 f = jnp.zeros([2, n, n], dtype=precision)
-f = f.at[0, :, :].set(jnp.cos(x-0.1)*jnp.sin(x+y-1.2) + jnp.sin(3*x-1)*jnp.cos(y-1))
-#f = f.at[1, :, :].set(jnp.cos(x+2.1)*jnp.sin(y+3.5))
+f = f.at[0, :, :].set( jnp.cos(x-0.1)*jnp.sin(x+y-1.2) + jnp.sin(3*x-1)*jnp.cos(y-1) + 2*jnp.cos(x))
+f = f.at[1, :, :].set( jnp.cos(x+2.1)*jnp.sin(y+3.5) )
     
 #fft the data before we evolve
 f = jnp.fft.rfft2(f)

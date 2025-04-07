@@ -53,7 +53,7 @@ data = jnp.load("turb.npz")
 fs = data['fs']
 
 #MATLAB indices I picked from visually inspecting the recurrence diagram.
-idx = [32, 82]
+idx = [218, 268]
 f = fs[idx[0], :, :, :]
 f = jnp.fft.irfft2(f)
 
@@ -74,15 +74,15 @@ sx = 0.0
 input_dict = {"fields": f, "T": T, "sx": sx}
 
 #load a previous guess
-matlab_data = loadmat("data/RPO_candidate_4152.mat")
-matlab_data = loadmat("data/RPO_candidate_10000  .mat")
-
-input_dict = {"fields": matlab_data['fields'], "T": matlab_data['T'][0][0], "sx": matlab_data['sx'][0][0] }
+#matlab_data = loadmat("data/RPO_candidate_4152.mat")
+#matlab_data = loadmat("data/RPO_candidate_10000.mat")
+#input_dict = {"fields": matlab_data['fields'], "T": matlab_data['T'][0][0], "sx": matlab_data['sx'][0][0] }
 
 
 #Add the number of steps we need
 param_dict.update({ 'steps': ministeps* (idx[1] - idx[0]) } )
 
+print(f"using {param_dict['steps']} steps")
 
 
 ###############################
@@ -91,8 +91,6 @@ param_dict.update({ 'steps': ministeps* (idx[1] - idx[0]) } )
 
 m, v = adam.init_adam(input_dict)
 maxit = 10000000
-
-
 
 #Define a function to compute the vlaue of the loss and the gradient simultaneously
 loss_fn = lambda input_dict: loss_functions.loss_RPO(input_dict, param_dict)
@@ -115,7 +113,7 @@ for t in range(maxit):
     stop = time.time()
     walltime = stop-start
 
-    lr = 1e-4 
+    lr = 1e-2
     input_dict, m, v = update_fn(input_dict, grad, m, v, t+1, lr=lr, beta1=0.9, beta2=0.999, eps=1e-6)
 
     #dealias
