@@ -1,0 +1,197 @@
+'''
+Let's debug a function for jax to do adjoint descent without blowing up our memory requirements
+'''
+
+import time
+import jax
+import jax.flatten_util
+import jax.numpy as jnp
+
+import lib.mhd_jax as mhd_jax
+import lib.loss_functions as loss_functions
+import lib.adam as adam
+from lib.linalg import gmres
+
+
+from scipy.io import savemat, loadmat
+
+###############################
+# Construct numerical grid
+###############################
+
+n = 128 # grid resolution
+precision = jnp.float64  # Double or single precision
+
+# If you want double precision, change JAX defaults
+if (precision == jnp.float64):
+    jax.config.update("jax_enable_x64", True)
+
+# Generate grid information
+param_dict = mhd_jax.construct_domain(n, precision)
+
+#Pull out grid matrices for forcing construction
+x = param_dict['x']
+y = param_dict['y']
+
+
+
+
+#################################################
+# Physical parameters: dissipation, forcing, ...
+#################################################
+nu  = 1/40  # hydro dissipation
+eta = 1/40  # magnetic dissipation
+
+# Mean magnetic field
+b0 = [0.0, 0.1]
+
+# Construct your forcing
+forcing = -4*jnp.cos(4*y)
+
+param_dict.update({'forcing': forcing, 'b0': b0, 'nu': nu, 'eta': eta})
+
+
+#Load the turbulent trajectory
+data = jnp.load("turb.npz")
+fs = data['fs']
+
+#MATLAB indices I picked from visually inspecting the recurrence diagram.
+idx = [32, 82]
+f = fs[idx[0], :, :, :]
+f = jnp.fft.irfft2(f)
+
+dt = 0.005
+ministeps = 32
+T = dt * ministeps * (idx[1] - idx[0])
+sx = 0.0
+
+
+###########################################
+# Load an initial condition from turbulence
+###########################################
+
+
+
+
+#Create a dictionary of optimizable field
+input_dict = {"fields": f, "T": T, "sx": sx}
+
+#load a previous guess
+matlab_data = loadmat("data/RPO_candidate_4152.mat")
+input_dict = {"fields": matlab_data['fields'], "T": matlab_data['T'][0][0], "sx": matlab_data['sx'][0][0] }
+
+
+#Add the number of steps we need
+param_dict.update({ 'steps': ministeps * (idx[1] - idx[0]) } )
+
+
+
+################################
+# Test Jacobian Vector Products
+################################
+
+objective = jax.jit( lambda input_dict: loss_functions.objective_RPO(input_dict, param_dict) )
+
+#Compile it
+_ = objective(input_dict)
+
+start = time.time()
+f = objective(input_dict)
+stop = time.time()
+
+print( f"walltime = {stop - start} to evaluate the objective function")
+
+
+
+
+
+jac = jax.jit( lambda primal, tangent: jax.jvp( objective, (primal,), (tangent,))[1] )
+
+#compile
+_ = jac( input_dict, f )
+
+#Add phase conditions
+jac_with_phase = jax.jit( lambda primal, tangent: loss_functions.add_phase_conditions( primal, tangent, jac(primal, tangent), param_dict) )
+
+_ = jac_with_phase( input_dict, f )
+
+start = time.time()
+df = jac_with_phase( input_dict, f )
+stop = time.time()
+
+print( f"walltime = {stop - start} to evaluate the JVP with phase conditions")
+
+#print( df )
+
+
+
+import numpy as np
+
+def save_jax_dict(filename, jax_dict):
+    flat, treedef = jax.tree_util.tree_flatten(jax_dict)
+    np_flat = [np.array(x) for x in flat]  # convert to numpy
+    np.savez(filename, *np_flat, treedef=treedef)
+
+def load_jax_dict(filename):
+    data = np.load(filename, allow_pickle=True)
+    treedef = data['treedef'].item()
+    flat = [data[key] for key in data.files if key != 'treedef']
+    return jax.tree_util.tree_unflatten(treedef, flat)
+
+#Attempt Newton-Raphson iteration. God be kind, forgive me for the sins I am about to commit.
+
+
+input_dict = load_jax_dict("newton/2.bin.npz")
+
+maxit = 128
+inner = 128*3    
+outer = 1
+damp  = 1.0
+
+ 
+
+
+#Compile an adjoint looping function that picks out a descent direction to kick off Newton-GMRES
+segments = 4 #Break up integration to reduce memory requirement
+grad_fn  = lambda input_dict: loss_functions.loss_RPO_memory_efficient( input_dict, param_dict, segments )[1]
+grad_fn = jax.jit(grad_fn)
+
+
+#Compile
+_ = grad_fn(input_dict)
+
+for i in range(maxit):
+    start = time.time()
+    f = objective(input_dict)
+    stop = time.time()
+    fwalltime = stop - start
+
+    f_vec, unravel_fn = jax.flatten_util.ravel_pytree(f)
+
+    #Define a linear operator for GMRES
+    #Do this every iteration since input_dict changes
+    lin_op = lambda v:  jax.flatten_util.ravel_pytree(  jac_with_phase( input_dict, unravel_fn(v))  )[0]
+
+    #Solve for a Newton step with GMRES
+    start = time.time()
+    
+    #Get initial guess for GMRES from adjoint descent
+    Q0 = jax.flatten_util.ravel_pytree( grad_fn(input_dict ) )[0]
+
+    #print(f_vec.shape)
+    #print(Q0.shape)
+    #exit()
+
+    step = gmres(lin_op, f_vec, inner, Q0)
+    stop = time.time()
+    gmreswalltime = stop - start
+
+    print(f"Iteration {i}: |f| = {jnp.linalg.norm(f_vec)}, fwalltime = {fwalltime}, gmres time = {gmreswalltime}")
+    
+    #update the input_dict
+    x, unravel_fn = jax.flatten_util.ravel_pytree( input_dict )
+    x = x - damp * step
+    input_dict = unravel_fn(x)
+
+
+    save_jax_dict(f"newton/{i}.bin", input_dict)
