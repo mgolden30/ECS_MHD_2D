@@ -1,17 +1,20 @@
 clear;
 
-load("dist.mat");
+load("../dist.mat");
 
 
 
 %%
 clf;
 n = 128;
-imagesc(dist/n/n);
+
+dist = dist / mean(abs(dist), "all");
+imagesc(dist);
+%imagesc(dist/n/n);
 axis square;
 set(gca, "ydir", "normal");
 colorbar();
-clim([0,1.3]);
+clim([0,1]);
 
 %%
 for i = 1:size(fs,1)
@@ -29,7 +32,16 @@ idx = [555, 582];
 idx = [1015, 1207];
 idx = [1263, 1323];
 idx = [243, 309];
-idx= [32, 82];
+idx= [556, 593];
+
+idx = [155, 194];
+
+idx = [147, 189];
+
+%idx = [390, 450];
+idx = [696, 766];
+
+idx = [218, 268];
 
 dt = 0.01;
 ministeps = 32;
@@ -37,20 +49,10 @@ T = dt*ministeps*(idx(2) - idx(1))
 
 tiledlayout(2,2);
 
-vis( squeeze(fs(idx(1),:,:,:)) );
-vis( squeeze(fs(idx(2),:,:,:)) );
+for i = 1:2
+  vis( squeeze(fs(idx(i),:,:,:)) );
+end
 
-
-
-%%
-clear;
-load("data/RPO_candidate_4152.mat");
-
-clf;
-tiledlayout(1,2);
-vis( fields );
-T
-sx
 
 %%
 
@@ -62,11 +64,12 @@ k = reshape(k, 1, []);
 
 figure(1);
 %while(true)
-for i = 0:24
-  load("timeseries/" + i + ".mat");
+frames = 50
+for i = 0:frames-1
+  load("../timeseries/" + i + ".mat");
 
   f = fft(f, [], 2);
-  f = f .* exp( -1i* i/24 *sx * k );
+  f = f .* exp( -1i* i/frames *sx * k );
   f = real(ifft(f, [], 2));
 
   tiledlayout(1,2);
@@ -76,7 +79,7 @@ for i = 0:24
 
   drawnow;
 
-  %saveas(gcf, sprintf("frames/%03d.png", i) );
+  saveas(gcf, sprintf("frames/%03d.png", i) );
 end
 %end
 
@@ -114,4 +117,3 @@ function vis(f)
   title("$\nabla \times {\bf B}$", "interpreter", "latex", "fontsize", fs);
   set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
 end
-
