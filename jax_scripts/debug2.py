@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import lib.mhd_jax as mhd_jax
 import lib.loss_functions as loss_functions
 import lib.adam as adam
-from lib.linalg import gmres
+from lib.linalg import gmres, block_gmres
 
 
 from scipy.io import savemat, loadmat
@@ -66,12 +66,12 @@ T = dt * ministeps * (idx[1] - idx[0])
 sx = 0.0
 
 
+
+
+
 ###########################################
 # Load an initial condition from turbulence
 ###########################################
-
-
-
 
 #Create a dictionary of optimizable field
 input_dict = {"fields": f, "T": T, "sx": sx}
@@ -123,94 +123,40 @@ stop = time.time()
 
 print( f"walltime = {stop - start} to evaluate the JVP with phase conditions")
 
-#print( df )
 
 
+#Try batched JVP for construction of a batched Krylov subspace. Freeze the input dict and vmap over the range
+f_vec, unravel = jax.flatten_util.ravel_pytree(f)
+f1 = lambda tangents: jac_with_phase(input_dict, tangents)
+f2 = lambda x: jax.flatten_util.ravel_pytree(x)[0]
 
-import numpy as np
+#lambda that acts on a vector and returns a vector. We handle the dict <-> vector translation
+vector_jac = lambda vec: f2(f1(unravel(vec)))
 
-def save_jax_dict(filename, jax_dict):
-    flat, treedef = jax.tree_util.tree_flatten(jax_dict)
-    np_flat = [np.array(x) for x in flat]  # convert to numpy
-    np.savez(filename, *np_flat, treedef=treedef)
+batched_jac = jax.vmap( vector_jac, in_axes=1, out_axes=1 )
 
-def load_jax_dict(filename):
-    data = np.load(filename, allow_pickle=True)
-    treedef = data['treedef'].item()
-    flat = [data[key] for key in data.files if key != 'treedef']
-    return jax.tree_util.tree_unflatten(treedef, flat)
+'''
+for batch_size in range(16):    
+    key = jax.random.PRNGKey(0)
+    many_vectors = jax.random.normal( key, shape=(f_vec.shape[0], batch_size ), dtype=jnp.float64 )
 
-#Attempt Newton-Raphson iteration. God be kind, forgive me for the sins I am about to commit.
-
-
-input_dict = load_jax_dict("newton/53.bin.npz")
-
-
-macrosteps = param_dict['steps'] // ministeps
-        
-f = input_dict["fields"]
-T = input_dict['T']
-dt= T/param_dict['steps']
-
-update = jax.jit( lambda f: mhd_jax.eark4(f, dt, ministeps, param_dict) )
-
-f = jnp.fft.rfft2(f)
-savemat( f"timeseries/0.mat", {"f": jnp.fft.irfft2(f), "T": T, "sx": input_dict["sx"] } )
-for i in range(macrosteps):
-    f = update(f)
-    savemat( f"timeseries/{i+1}.mat", {"f": jnp.fft.irfft2(f), "T": T, "sx": input_dict["sx"] } )
-exit()
-
-
-maxit = 128
-inner = 64
-outer = 1
-damp  = 1.0
-
- 
-
-
-#Compile an adjoint looping function that picks out a descent direction to kick off Newton-GMRES
-segments = 4 #Break up integration to reduce memory requirement
-grad_fn  = lambda input_dict: loss_functions.loss_RPO_memory_efficient( input_dict, param_dict, segments )[1]
-grad_fn = jax.jit(grad_fn)
-
-
-#Compile
-_ = grad_fn(input_dict)
-
-for i in range(maxit):
     start = time.time()
-    f = objective(input_dict)
+    output = batched_jac( many_vectors )
     stop = time.time()
-    fwalltime = stop - start
+    print( f"{batch_size}, {stop - start}" )
+'''
 
-    f_vec, unravel_fn = jax.flatten_util.ravel_pytree(f)
+batch_size = 8
+B = jnp.zeros((f_vec.shape[0], batch_size))
 
-    #Define a linear operator for GMRES
-    #Do this every iteration since input_dict changes
-    lin_op = lambda v:  jax.flatten_util.ravel_pytree(  jac_with_phase( input_dict, unravel_fn(v))  )[0]
+#Let's generate a realistic subspace
+fi = jnp.zeros( (2,n,n), dtype=precision )
+for i in range(batch_size):
+    fi = fi.at[0,:,:].set( jnp.cos( (i+1)*x ) )
+    B = B.at[:,i].set( f2( {'fields': fi, 'T': 0, 'sx': 0} ) )
 
-    #Solve for a Newton step with GMRES
-    start = time.time()
-    
-    #Get initial guess for GMRES from adjoint descent
-    Q0 = jax.flatten_util.ravel_pytree( grad_fn(input_dict ) )[0]
-
-    #print(f_vec.shape)
-    #print(Q0.shape)
-    #exit()
-
-    step = gmres(lin_op, f_vec, inner, Q0)
-    stop = time.time()
-    gmreswalltime = stop - start
-
-    print(f"Iteration {i}: |f| = {jnp.mean(jnp.square(f_vec))}, fwalltime = {fwalltime}, gmres time = {gmreswalltime}")
-    
-    #update the input_dict
-    x, unravel_fn = jax.flatten_util.ravel_pytree( input_dict )
-    x = x - damp * step
-    input_dict = unravel_fn(x)
-
-
-    save_jax_dict(f"newton/{i}.bin", input_dict)
+m = 5
+start = time.time()
+block_gmres( batched_jac, f_vec, m, B, tol=1e-8)
+stop = time.time()
+print(f"walltime {stop-start}")

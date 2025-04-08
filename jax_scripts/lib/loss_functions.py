@@ -90,8 +90,8 @@ def add_phase_conditions( input_dict, tangent_dict, Jtangent_dict, param_dict ):
     dfdt = jnp.fft.irfft2(dfdt)
     dfdx = jnp.fft.irfft2(dfdx)
 
-    Jtangent_dict['T']  = jnp.mean( df * dfdt )
-    Jtangent_dict['sx'] = jnp.mean( df * dfdx )
+    Jtangent_dict['T']  = jnp.sum( df * dfdt )
+    Jtangent_dict['sx'] = jnp.sum( df * dfdx )
     return Jtangent_dict
 
 

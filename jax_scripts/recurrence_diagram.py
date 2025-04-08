@@ -13,17 +13,17 @@ from scipy.io import savemat
 
 
 n  = 128
-dt = 0.005
+dt = 0.0025
 #transient_steps = 8*1024
 #steps = 1024
-ministeps = 32
+ministeps = 64
 precision = jnp.float64
 
 transient_steps = 16*1024
 steps = 512
 
-nu  = 1/40
-eta = 1/40
+nu  = 1/100
+eta = 1/100
 b0  = [0.0, 0.1] # Mean magnetic field
 
 
