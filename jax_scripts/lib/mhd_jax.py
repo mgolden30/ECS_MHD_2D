@@ -201,6 +201,7 @@ def eark4(f, dt, steps, param_dict ):
     k_sq = jnp.square(param_dict['kx']) + jnp.square(param_dict['ky'] )
     diss = diss.at[0,:,:].set( jnp.exp( -param_dict['nu']  * k_sq * dt / 2 ) )
     diss = diss.at[1,:,:].set( jnp.exp( -param_dict['eta'] * k_sq * dt / 2 ) )
+    diss = diss * param_dict['mask']
 
     #Need this lambda format to use fori_loop
     #Might as well jit it since we call this update a lot

@@ -17,11 +17,13 @@ colorbar();
 clim([0,1]);
 
 %%
-for i = 1:size(fs,1)
+for i = 1:128%size(fs,1)
   clf;
   tiledlayout(1,2);
   vis( squeeze(fs(i,:,:,:)) );
   drawnow;
+
+  saveas(gcf, sprintf("frames/%03d.png", i) );
 end
 
 %%
