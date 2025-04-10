@@ -143,7 +143,7 @@ def load_jax_dict(filename):
 #Attempt Newton-Raphson iteration. God be kind, forgive me for the sins I am about to commit.
 
 
-input_dict = load_jax_dict("newton/53.bin.npz")
+input_dict = load_jax_dict("newton/best.npz")
 '''
 
 macrosteps = param_dict['steps'] // ministeps
@@ -162,7 +162,7 @@ for i in range(macrosteps):
 exit()
 '''
 
-maxit = 100000
+maxit = 1
 inner = 8
 outer = 1
 damp  = 1.0
@@ -213,17 +213,21 @@ for i in range(maxit):
 
     #Let's generate a realistic subspace
     fi = jnp.zeros( (2,n,n), dtype=precision )
-    B.at[:,0].set(f_vec)
-    for ii in range(batch_size-1):
+    B = B.at[:,0].set( f_vec )
+    B = B.at[:,1].set( f2({'fields': jnp.zeros((2,n,n), dtype=precision), 'T': 1, 'sx':0}) )
+    B = B.at[:,2].set( f2({'fields': jnp.zeros((2,n,n), dtype=precision), 'T': 0, 'sx':1}) )
+    
+    for ii in range(batch_size-3):
         fi = fi.at[0,:,:].set( jnp.cos( (ii+1)*param_dict['x'] ) )
-        B = B.at[:,ii].set( f2( {'fields': fi, 'T': 0, 'sx': 0} ) )
+        B  = B.at[:,ii+3].set( f2( {'fields': fi, 'T': 0, 'sx': 0} ) )
 
-    m = 16*4
+    m = 32
     start = time.time()
     step = block_gmres( batched_jac, f_vec, m, B, tol=1e-8)
     stop = time.time()
     print(f"walltime {stop-start}")
 
+    savemat("f_vec.mat", {"b": f_vec})
 
 
 

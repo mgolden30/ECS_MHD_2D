@@ -59,6 +59,7 @@ load("../f_vec.mat");
 figure(3)
 plot_GMRES_residual( Q, H, b );
 
+vecnorm(G) .* abs(c)
 
 function plot_GMRES_residual( Q, H, b )
   %{
@@ -86,15 +87,7 @@ function plot_GMRES_residual( Q, H, b )
     H_sub = H(1:s*(i+1), i:s*i);  
     b_sub = b2(1:size(H_sub,1));
     
-    [U, S, V] = svd(H_sub, "econ");
-
-    S = diag(S);
-    S_inv = 1./S;
-    %S_inv( S <1 ) = 1; %conservative inverse
-    %S_inv = S_inv.';
-
-    x_sub = V * S_inv .* U.' * b_sub;
-    x_sub = H_sub \ b_sub;
+    x_sub = H_sub \ b2(1:size(H_sub,1));
 
     res(i) = norm( H_sub*x_sub - b_sub ) / norm(b_sub);
   end
