@@ -35,7 +35,7 @@ def loss_RPO( input_dict, param_dict ):
 
     #MSE error
     #loss = jnp.mean( jnp.square(diff)) + jnp.mean( jnp.square(diff_v) ) 
-    loss = jnp.mean( jnp.abs(diff)) + jnp.mean( jnp.abs(diff_v) ) 
+    loss = jnp.mean( jnp.abs(diff)) #+ jnp.mean( jnp.abs(diff_v) ) 
 
     return loss
 
@@ -70,6 +70,42 @@ def objective_RPO( input_dict, param_dict ):
 
     #Return a dictionary
     output_dict = {'fields': diff, 'T': 0.0, 'sx': 0.0}
+
+    return output_dict
+
+def objective_RPO_with_checkpoints( input_dict, param_dict ):
+    '''
+    PURPOSE:
+    Define a vector objective for Relative Periodic Orbits (RPOs). 
+    This variant has checkpointing so that reverse mode differentiation doesn't run out of memory
+    '''
+
+    # Unpack tensors we need 
+    f  = input_dict['fields']
+    T  = input_dict['T']
+    sx = input_dict['sx']
+
+    ministeps= param_dict['steps']
+    num_checkpoints=param_dict['num_checkpoints']
+    steps = ministeps * num_checkpoints
+
+    f  = jnp.fft.rfft2(f)
+    f0 = jnp.copy(f)
+
+    dt = T/steps
+    f = mhd_jax.eark4_with_checkpoints(f, dt, ministeps, num_checkpoints, param_dict )
+
+    #Shift the resulting fields
+    f = jnp.exp( -1j * param_dict['kx'] * sx ) * f
+
+    #compute the mismatch
+    diff   = f - f0
+
+    #Transform back to real space
+    diff   = jnp.fft.irfft2(diff)
+
+    #Return a dictionary
+    output_dict = {'fields': diff}
 
     return output_dict
 
@@ -133,9 +169,8 @@ def loss_RPO_memory_efficient( input_dict, param_dict, segments ):
             v0= jnp.fft.irfft2(v0)
 
             #Compute the mean squared error
-            return jnp.mean( jnp.square( f - f0 ))# + jnp.square( v - v0 ) )
+            return jnp.mean( jnp.square( f - f0 ) + jnp.square( v - v0 ) )
             #return jnp.mean( jnp.abs( f - f0 ) + jnp.abs( v - v0 ) )
-
 
 
     def integrate_segment( input_dict, param_dict, segments ):
@@ -249,3 +284,38 @@ def loss_RPO_memory_efficient( input_dict, param_dict, segments ):
     del grad['fields0']
 
     return loss, grad
+
+
+def traveling_wave_loss( input_dict, param_dict ):
+
+    #Compute the state velocity
+    f = jnp.fft.rfft2(input_dict['fields'])
+    v = mhd_jax.state_vel( f, param_dict, include_dissipation=True)
+
+    #Compute the x derivative
+    fx = 1j * param_dict['kx'] * f
+    c  = input_dict['wave_speed']
+
+    #for a traveling wave, \partial_t = c \partial_x
+    loss = v - c*fx
+
+    loss = jnp.fft.irfft2(loss)
+    loss = jnp.mean(jnp.square(loss))
+    return loss
+
+
+
+def traveling_wave_objective( input_dict, param_dict ):
+    #Compute the state velocity
+    f = jnp.fft.rfft2(input_dict['fields'])
+    v = mhd_jax.state_vel( f, param_dict, include_dissipation=True)
+
+    #Compute the x derivative
+    fx = 1j * param_dict['kx'] * f
+    c  = input_dict['wave_speed']
+
+    #for a traveling wave, \partial_t = c \partial_x
+    loss = v - c*fx
+
+    loss = jnp.fft.irfft2(loss)
+    return {"fields": loss}
