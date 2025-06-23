@@ -8,21 +8,25 @@ import time
 import matplotlib.pyplot as plt
 
 import lib.mhd_jax as mhd_jax
-import lib.dictionaryIO as dictionaryIO
 
 from scipy.io import savemat
 
+
+#n  = 512
+#dt = 0.0025
+
 n  = 256
-dt = 1/256
-ministeps = 64
+dt = 1/1024
+
 precision = jnp.float64
 
-transient_steps = 512*4
+ministeps = 64
+transient_steps = 1*1024
 steps = 256
 
 nu  = 1/100
 eta = 1/100
-b0  = [0.0, 1.0] # Mean magnetic field
+b0  = [0.0, 0.1] # Mean magnetic field
 
 
 # If you want double precision, change JAX defaults
@@ -41,13 +45,10 @@ forcing = -4*jnp.cos(4*y)
 # Append the extra system information to param_dict
 param_dict.update( {'nu': nu, 'eta': eta, 'b0': b0, 'forcing': forcing} )
 
-#Append timestepping information as well
-param_dict.update( {'dt': dt, 'ministeps': ministeps} )
-
 # Initial data
 f = jnp.zeros([2, n, n], dtype=precision)
-f = f.at[0, :, :].set( jnp.cos(x-0.1)*jnp.sin(x+y-1.2) - jnp.sin(3*x-1)*jnp.cos(y-1) + 2*jnp.cos(2*x-1))
-f = f.at[1, :, :].set( jnp.cos(x+2.1)*jnp.sin(y+3.5) - jnp.cos(1-x) )
+f = f.at[0, :, :].set( jnp.cos(x-0.1)*jnp.sin(x+y-1.2) + jnp.sin(3*x-1)*jnp.cos(y-1) + 2*jnp.cos(x))
+f = f.at[1, :, :].set( jnp.cos(x+2.1)*jnp.sin(y+3.5) )
     
 #fft the data before we evolve
 f = jnp.fft.rfft2(f)
@@ -74,12 +75,24 @@ plt.close()
 
 one_step = jax.jit( lambda f: mhd_jax.eark4(f, dt, ministeps, param_dict) )
 
+#Turn off forcing
+#param_dict['forcing'] =  0*forcing
 
 fs = jnp.zeros([steps,2,n,n//2+1], dtype=f.dtype )
 start = time.time()
-for i in range(steps):
+
+@jax.jit
+def body_fun(i, carry):
+    f, fs = carry
     f = one_step(f)
-    fs = fs.at[i,:,:,:].set(f)
+    fs = fs.at[i].set(f)
+    return f, fs
+
+f, fs = jax.lax.fori_loop(0, steps, body_fun, (f, fs))
+
+#for i in range(steps):
+#    f = one_step(f)
+#    fs = fs.at[i,:,:,:].set(f)
 stop = time.time()
 print(f"Generating {steps} steps of turbulence took {stop-start} seconds.")
 
@@ -87,6 +100,8 @@ print(f"Generating {steps} steps of turbulence took {stop-start} seconds.")
 figure, axis = mhd_jax.vis(f)
 figure.savefig("figures/post_evolution.png", dpi=1000)
 plt.close()
+
+
 
 
 ##################################
@@ -116,14 +131,7 @@ plt.colorbar( im )
 plt.title("recurrence")
 plt.savefig("figures/recurrence.png", dpi=1000)
 
+jnp.savez( "turb.npz", fs=fs, dt=dt, ministeps=ministeps )
 
-
-
-
-input_dict = {"fs": fs, "dist": dist}
-dictionaryIO.save_dicts( "turb.npz", input_dict, param_dict )
-
-
-#Save to MATLAB format for interactive visualization
 fs = jnp.fft.irfft2(fs)
-savemat( "dist.mat", {"dist": dist, "fs": fs} )
+savemat( "traj.mat", {"dist": dist, "fs": fs} )

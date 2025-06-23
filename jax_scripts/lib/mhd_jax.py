@@ -74,6 +74,12 @@ def construct_domain(n: int, data_type):
     # Prevent division by zero
     k_sq = k_sq.at[0, 0].set(1)
 
+
+    #inverse_laplacian
+    inv_lap = -1/k_sq
+    inv_lap = inv_lap.at[0,0].set(0)
+    inv_lap = inv_lap*mask
+
     # uncurl matrices
     to_u =  ky / k_sq
     to_v = -kx / k_sq
@@ -84,7 +90,7 @@ def construct_domain(n: int, data_type):
     to_u = to_u*mask
     to_v = to_v*mask
 
-    param_dict = {'x': x, 'y': y, 'kx': kx, 'ky': ky, 'mask': mask, 'to_u': to_u, 'to_v': to_v}
+    param_dict = {'x': x, 'y': y, 'kx': kx, 'ky': ky, 'mask': mask, 'to_u': to_u, 'to_v': to_v, 'inv_lap': inv_lap}
 
     return param_dict
 
@@ -137,7 +143,7 @@ def state_vel(fields, param_dict, include_dissipation ):
     #Note this computes the u dot grad w and B dot grad j
     advection = fu * fx + fv * fy
 
-    k_sq = kx*kx + ky*ky
+    k_sq = (kx*kx + ky*ky)*mask
 
     # vorticity dynamics
     dwdt = -advection[0, :, :] + advection[1, :, :] + forcing
@@ -191,9 +197,9 @@ def eark4_step(f, dt, param_dict, diss):
 
 
 
-def eark4(f, dt, steps, param_dict ):
+def eark4(f, dt, steps, param_dict):
     '''
-    Perform many steps of Exponential Ansatz Runge-Kutta 4 (EARK4)
+    Perform many steps of Exponential Ansatz Runge   -Kutta 4 (EARK4)
     '''
 
     #Construct a diagonal dissipation operator
@@ -209,9 +215,8 @@ def eark4(f, dt, steps, param_dict ):
 
     #Apply to update 
     f = jax.lax.fori_loop( 0, steps, update_f, f)
-   
-    return f
 
+    return f
 
 
 
@@ -263,9 +268,9 @@ if (__name__ == "__main__"):
     x = param_dict['x']
     y = param_dict['y']
 
-    nu  = 1/100
-    eta = 1/100
-    b0  = [0.0, 0.1]  # Mean magnetic field
+    nu  = 1/40
+    eta = 1/40
+    b0  = [0.0, 1.0]  # Mean magnetic field
     forcing = -4*jnp.cos(4*y)
 
     # Append the extra system information to param_dict

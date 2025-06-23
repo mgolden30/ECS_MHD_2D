@@ -1,5 +1,5 @@
 '''
-Let's use JAX to hunt for RPOs with gradient descent.
+Converge RPOs with ADAM
 '''
 
 import time
@@ -9,80 +9,55 @@ import jax.numpy as jnp
 import lib.mhd_jax as mhd_jax
 import lib.loss_functions as loss_functions
 import lib.adam as adam
+import lib.dictionaryIO as dictionaryIO
 
 from scipy.io import savemat, loadmat
 
-###############################
-# Construct numerical grid
-###############################
-
-n = 128 # grid resolution
-precision = jnp.float64  # Double or single precision
-
 # If you want double precision, change JAX defaults
-if (precision == jnp.float64):
+precision = jnp.float64
+if(precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-# Generate grid information
-param_dict = mhd_jax.construct_domain(n, precision)
-
-#Pull out grid matrices for forcing construction
-x = param_dict['x']
-y = param_dict['y']
 
 
-
-
-#################################################
-# Physical parameters: dissipation, forcing, ...
-#################################################
-nu  = 1/40  # hydro dissipation
-eta = 1/40  # magnetic dissipation
-
-# Mean magnetic field
-b0 = [0.0, 0.1]
-
-# Construct your forcing
-forcing = -4*jnp.cos(4*y)
-
-param_dict.update({'forcing': forcing, 'b0': b0, 'nu': nu, 'eta': eta})
-
-
-#Load the turbulent trajectory
-data = jnp.load("turb.npz")
-fs = data['fs']
+#Load state from a turbulent trajectory
+turb_dict, param_dict = dictionaryIO.load_dicts("turb.npz")
 
 #MATLAB indices I picked from visually inspecting the recurrence diagram.
-idx = [218, 268]
-f = fs[idx[0], :, :, :]
+idx = [54, 63]
+
+
+#Get conditions for RPO guess
+f = turb_dict['fs'][idx[0]-1,:,:,:]
 f = jnp.fft.irfft2(f)
 
-dt = 0.005
-ministeps = 32
-T = dt * ministeps * (idx[1] - idx[0])
+#Period
+T = param_dict['dt'] * param_dict['ministeps'] * (idx[1] - idx[0])
+
+#spatial shift
 sx = 0.0
 
-
-###########################################
-# Load an initial condition from turbulence
-###########################################
-
-
-
+#number of timesteps 
+steps = param_dict['ministeps'] * (idx[1] - idx[0])
+steps = int(steps) #JAX complains otherwise
+param_dict.update({ 'steps': steps } )
 
 #Create a dictionary of optimizable field
 input_dict = {"fields": f, "T": T, "sx": sx}
 
-#load a previous guess
-#matlab_data = loadmat("data/RPO_candidate_4152.mat")
-#matlab_data = loadmat("data/RPO_candidate_10000.mat")
-#input_dict = {"fields": matlab_data['fields'], "T": matlab_data['T'][0][0], "sx": matlab_data['sx'][0][0] }
+#Delete keys from the turbulent trajectory param_dict that we won't need anymore to avoid confusion
+del param_dict['dt']
+del param_dict['ministeps']
 
 
-#Add the number of steps we need
-param_dict.update({ 'steps': ministeps* (idx[1] - idx[0]) } )
+#Or, load dicts from a previous run
+input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_264.npz")
 
-print(f"using {param_dict['steps']} steps")
+#For some reason JAX complains that "steps" is not a constant unless I override is as an integer
+param_dict['steps'] = int(param_dict['steps'])
+
+print(f"using {param_dict['steps']} timesteps of type {type(param_dict['steps'])} ")
+
 
 
 ###############################
@@ -93,8 +68,8 @@ m, v = adam.init_adam(input_dict)
 maxit = 10000000
 
 #Define a function to compute the vlaue of the loss and the gradient simultaneously
-loss_fn = lambda input_dict: loss_functions.loss_RPO(input_dict, param_dict)
-grad_fn = jax.jit(jax.value_and_grad(loss_fn))
+#loss_fn = lambda input_dict: loss_functions.loss_RPO(input_dict, param_dict)
+#grad_fn = jax.jit(jax.value_and_grad(loss_fn))
 
 
 #Or do it memory efficient so we can go to many timesteps
@@ -124,19 +99,5 @@ for t in range(maxit):
 
     print(f"{t}: loss = {loss}, walltime: {walltime}, T = {input_dict['T']}")
     
-    if ( t % 8 == 0 ):    
-        macrosteps = param_dict['steps'] // ministeps
-        
-        f = input_dict["fields"]
-        T = input_dict['T']
-        dt= T/param_dict['steps']
-
-        update = jax.jit( lambda f: mhd_jax.eark4(f, dt, ministeps, param_dict) )
-
-        f = jnp.fft.rfft2(f)
-        savemat( f"timeseries/0.mat", {"f": jnp.fft.irfft2(f), "T": T, "sx": input_dict["sx"] } )
-        for i in range(macrosteps):
-            f = update(f)
-            savemat( f"timeseries/{i+1}.mat", {"f": jnp.fft.irfft2(f), "T": T, "sx": input_dict["sx"] } )
-
-        savemat( f"data/RPO_candidate_{t}.mat", input_dict)
+    if ( t % 8 == 0 ):
+        dictionaryIO.save_dicts( f"data/adjoint_descent_{t}.npz", input_dict, param_dict )

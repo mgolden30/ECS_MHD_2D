@@ -1,5 +1,5 @@
 '''
-Define functions for easy use of ADAM optimization here
+Define functions for easy use of ADAM optimization with dictionaries of tensors being optimized.
 '''
 
 import jax.numpy as jnp

@@ -10,22 +10,23 @@ import jax.numpy as jnp
 import lib.mhd_jax as mhd_jax
 import lib.loss_functions as loss_functions
 import lib.adam as adam
-from lib.linalg import gmres
+from lib.linalg import gmres, block_gmres
 import lib.dictionaryIO as dictionaryIO
+
+from scipy.io import savemat, loadmat
 
 ###############################
 # Construct numerical grid
 ###############################
+
 
 precision = jnp.float64  # Double or single precision
 # If you want double precision, change JAX defaults
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_648.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("Re40/RPO1.npz")
+
+input_dict, param_dict = dictionaryIO.load_dict("data/adjoint_descent_64.npz")
 
 
 #Define the RPO objective function and compile it
@@ -50,13 +51,15 @@ _ = jac_with_phase( input_dict, f )
 use_basic_gmres = True
 
 maxit = 1024
-inner = 256*2
+inner = 8
 outer = 1
 damp  = 1.0
-s_min = 1 #1e-2
+
+
 
 
 for i in range(maxit):
+    
     #Step 1: evaluate the objective function
     start = time.time()
     f = objective(input_dict)
@@ -70,13 +73,45 @@ for i in range(maxit):
     #Do this every iteration since input_dict changes
     lin_op = lambda v:  jax.flatten_util.ravel_pytree(  jac_with_phase( input_dict, unravel_fn(v))  )[0]
 
-    #Do GMRES
-    start = time.time()
-    step = gmres( lin_op, f_vec, inner, f_vec, s_min )
-    stop = time.time()
-    gmres_walltime = stop - start
+    '''
+    f1 = lambda tangents: jac_with_phase(input_dict, tangents)
+    f2 = lambda x: jax.flatten_util.ravel_pytree(x)[0]
 
-    print(f"Iteration {i}: |f| = {jnp.linalg.norm(f_vec):.3e}, fwalltime = {f_walltime:.3f}, gmres time = {gmres_walltime:.3f}, period T = {input_dict['T']:.3e}")
+    #lambda that acts on a vector and returns a vector. We handle the dict <-> vector translation
+    vector_jac = lambda vec: f2(f1(unravel_fn(vec)))
+    '''
+
+    '''
+    batched_jac = jax.vmap( vector_jac, in_axes=1, out_axes=1 )
+
+    batch_size = 4
+    B = jnp.zeros((f_vec.shape[0], batch_size))
+
+    #Let's generate a realistic subspace
+    B = B.at[:,0].set( f_vec )
+    fields = input_dict['fields']
+    fields = jnp.fft.rfft2(fields)
+    dfdx = 1j * param_dict['kx'] * fields
+    dfdt = mhd_jax.state_vel(fields, param_dict, include_dissipation=True)
+    dfdx = jnp.fft.irfft2(dfdx)
+    dfdt = jnp.fft.irfft2(dfdt)
+
+    B = B.at[:,1].set( f2({'fields': dfdt, 'T': 0, 'sx':0}) )
+    B = B.at[:,2].set( f2({'fields': dfdx, 'T': 0, 'sx':0}) )
+
+    #Lastly, adjoint descent direction
+    B = B.at[:,3].set( jax.flatten_util.ravel_pytree( grad_fn(input_dict ) )[0] )
+
+
+    m = 32*2
+    start = time.time()
+    step = block_gmres( batched_jac, f_vec, m, B, tol=1e-8, iteration=i )
+    stop = time.time()
+    '''
+
+    step
+
+    print(f"Iteration {i}: |f| = {jnp.linalg.norm(f_vec)}, fwalltime = {fwalltime}, gmres time = {stop - start}")
     
     #update the input_dict
     x, unravel_fn = jax.flatten_util.ravel_pytree( input_dict )
@@ -85,12 +120,12 @@ for i in range(maxit):
 
     #Dealias after every Newton step
     fields = input_dict['fields']
-    #k = jnp.fft.fftfreq(n, d=1/n, dtype=jnp.float64)
-    #kx = jnp.reshape(k,          [-1, 1])
-    #ky = jnp.reshape(k[:n//2+1], [1, -1])
-    #hypermask = (jnp.abs(kx) < n/4) & (jnp.abs(ky) < n/4)
-    fields = param_dict['mask'] * jnp.fft.rfft2(fields)
+    k = jnp.fft.fftfreq(n, d=1/n, dtype=jnp.float64)
+    kx = jnp.reshape(k,          [-1, 1])
+    ky = jnp.reshape(k[:n//2+1], [1, -1])
+    hypermask = (jnp.abs(kx) < n/4) & (jnp.abs(ky) < n/4)
+    fields = hypermask * jnp.fft.rfft2(fields)
     fields = jnp.fft.irfft2(fields)
     input_dict['fields'] = fields
 
-    dictionaryIO.save_dicts( f"newton/{i}", input_dict, param_dict )
+    save_jax_dict(f"newton/{i}.bin", input_dict)

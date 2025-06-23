@@ -3,7 +3,7 @@ Let's use JAX to hunt for RPOs. I got it working for single shooting, but the me
 I think multishooting is the solution. Break up integration into segements. Compute grad one segment at a time.
 '''
 
-import mhd_jax
+import lib.mhd_jax as mhd_jax
 import time
 import jax
 import jax.numpy as jnp
@@ -25,17 +25,17 @@ nu = 1/100  # hydro dissipation
 eta = 1/100  # magnetic dissipation
 
 # Mean magnetic field
-b0 = [0.0, 0.1]
+b0 = [0.0, 1.0]
 
 # Construct your forcing
 forcing = -4*jnp.cos(4*y)
 
 # Initial data
-segments = 32 # Break up the trajectory into this many segments
+segments = 8 # Break up the trajectory into this many segments
 f = jnp.zeros([segments, 2, n, n], dtype=precision)
 
 # Load a single shooting guess and use it to construct the multishooting initial state
-my_dict = loadmat("converged_RPO_14721.mat")
+#my_dict = loadmat("converged_RPO_14721.mat")
 
 T = my_dict["T"][0][0]
 sx = my_dict["sx"][0][0]

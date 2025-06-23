@@ -43,7 +43,7 @@ nu  = 1/40  # hydro dissipation
 eta = 1/40  # magnetic dissipation
 
 # Mean magnetic field
-b0 = [0.0, 0.1]
+b0 = [0.1, 0.0]
 
 # Construct your forcing
 forcing = -4*jnp.cos(4*y)
@@ -56,11 +56,11 @@ data = jnp.load("turb.npz")
 fs = data['fs']
 
 #MATLAB indices I picked from visually inspecting the recurrence diagram.
-idx = [147, 189]
+idx = [181, 205]
 f = fs[idx[0], :, :, :]
 f = jnp.fft.irfft2(f)
 
-dt = 0.005
+dt = 0.01
 ministeps = 32
 T = dt * ministeps * (idx[1] - idx[0])
 sx = 0.0
@@ -81,12 +81,12 @@ param_dict.update({ 'steps': ministeps * (idx[1] - idx[0]) } )
 
 
 
-
+'''
 #load a previous guess
 matlab_data = loadmat("data/RPO_candidate_72.mat")
 input_dict = {"fields": matlab_data['fields'], "T": matlab_data['T'][0][0], "sx": matlab_data['sx'][0][0] }
 param_dict['steps'] = 1600
-
+'''
 
 ################################
 # Test Jacobian Vector Products

@@ -40,7 +40,7 @@ nu  = 1/40  # hydro dissipation
 eta = 1/40  # magnetic dissipation
 
 # Mean magnetic field
-b0 = [0.0, 0.1]
+b0 = [0.1, 0.0]
 
 # Construct your forcing
 forcing = -4*jnp.cos(4*y)
@@ -53,11 +53,12 @@ data = jnp.load("turb.npz")
 fs = data['fs']
 
 #MATLAB indices I picked from visually inspecting the recurrence diagram.
-idx = [32, 82]
+idx = [181, 205]
+
 f = fs[idx[0], :, :, :]
 f = jnp.fft.irfft2(f)
 
-dt = 0.005
+dt = 0.01
 ministeps = 32
 T = dt * ministeps * (idx[1] - idx[0])
 sx = 0.0
@@ -79,7 +80,7 @@ input_dict = {"fields": matlab_data['fields'], "T": matlab_data['T'][0][0], "sx"
 
 
 #Add the number of steps we need
-param_dict.update({ 'steps': ministeps * (idx[1] - idx[0])//2 } )
+param_dict.update({ 'steps': ministeps * (idx[1] - idx[0])*10 } )
 
 
 
@@ -92,6 +93,7 @@ loss_fn = lambda input_dict: loss_functions.loss_RPO(input_dict, param_dict)
 #Define a function to compute the vlaue of the loss and the gradient simultaneously
 grad_fn = jax.jit(jax.value_and_grad(loss_fn))
 
+'''
 #Compile
 _ = grad_fn(input_dict)
 
@@ -102,7 +104,7 @@ stop = time.time()
 walltime = stop-start
 
 print(f"walltime = {walltime}, loss = {loss}, grad_T = {grad['T']}, |grad_f| = {jnp.mean( jnp.square( grad['fields']))}")
-
+'''
 
 #Determine the number of segments
 segments = 8
@@ -113,7 +115,7 @@ grad_fn = jax.jit(grad_fn)
 #Compile
 _ = grad_fn(input_dict)
 
-
+print(param_dict['steps'])
 
 start = time.time()
 loss, grad = grad_fn(input_dict)
