@@ -1,12 +1,14 @@
+%{
+Visualize the trajectory of 2D MHD
+%}
+
 clear;
 
-load("../traj.mat");
-
-
+load("../dist2.mat");
 
 clf;
-n = 128;
 
+figure(1);
 dist = dist / mean(abs(dist), "all");
 imagesc(dist);
 %imagesc(dist/n/n);
@@ -16,25 +18,71 @@ colorbar();
 clim([0,1]);
 
 %%
-for i = 1:128%size(fs,1)
+figure(2);
+for i = 1:size(fs,1)
+  i
+    
   clf;
   tiledlayout(1,2);
-  vis( squeeze(fs(i,:,:,:)) );
+  vis( squeeze( fs(i,:,:,:)) );
   drawnow;
 
-  %saveas(gcf, sprintf("frames/%03d.png", i) );
+  saveas(gcf, sprintf("frames/%03d.png", i) );
+
+  colormap bluewhitered
+
 end
 return;
+
+
+%% Visualize RPO
+
+for j  =1:100
+num_frames = 18;
+for i = 1:num_frames
+  clf;
+  tiledlayout(1,2);
+  load("../traj/" + (i-1) + ".mat");
+  vis( squeeze( f(:,:,:)) );
+  colormap bluewhitered
+
+  drawnow;
+end
+end
+
+%% Compare before and after
+clf;
+tiledlayout(2,2);
+
+load("../traj/0.mat");
+vis(f);
+
+load("../traj/" + (num_frames-1) + ".mat");
+vis(f);
+drawnow;
+
+%%
+clf;
+i = 233;
+vis( squeeze( fs(i,:,:,:)) );
+
+
+
+%%
+j_sq = mean( fs( :,2,:,:).^2, [3,4] );
+
+plot( j_sq );
+
+
+return
 
 %%
 idx = [133, 156];
 idx = [181, 205];
-idx = [456, 474];
 
-idx = [385, 416];
-idx = [362, 468];
-
-idx = [376, 412]
+dt = 0.005;
+ministeps = 32;
+T = dt*ministeps*(idx(2) - idx(1))
 
 tiledlayout(2,2);
 
@@ -50,16 +98,13 @@ k = 0:n-1;
 k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
-% Prepare the new file.
-    vidObj = VideoWriter('peaks.avi');
-    open(vidObj);
-    
+
 figure(1);
 %while(true)
 frames = 24*2
 for i = 0:frames-1
   i
-  load( sprintf("../timeseries/%03d.mat", i) );
+  load("../timeseries/" + i + ".mat");
 
   f = fft(f, [], 2);
   f = f .* exp( -1i* i/frames *sx * k );
@@ -68,19 +113,13 @@ for i = 0:frames-1
   tiledlayout(1,2);
   vis(f);
 
-  colormap bluewhitered
-  set(gca, 'Color', 'w');
+  %colormap bluewhitered
 
   drawnow;
 
   saveas(gcf, sprintf("frames/%03d.png", i) );
-% Write each frame to the file.
-       currFrame = getframe(gcf);
-       writeVideo(vidObj,currFrame);
-    end
-  
-    % Close the file.
-    close(vidObj);
+end
+%end
 
 %%
 figure(2);
@@ -97,15 +136,13 @@ vis(f);
 
 function vis(f)
   fs = 32;
-  scale = 5;
-
 
   nexttile
   data = squeeze(f(1,:,:)).';
   %imagesc( [data,data;data,data] );
   imagesc(data);
   axis square;
-  clim([-1 1]*scale);
+  clim([-10 10]);
   title("$\nabla \times {\bf u}$", "interpreter", "latex", "fontsize", fs);
   set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
 
@@ -114,7 +151,7 @@ function vis(f)
   %imagesc( [data,data;data,data] );
   imagesc(data);
   axis square;
-  clim([-1 1]*scale);
+  clim([-10 10]);
   title("$\nabla \times {\bf B}$", "interpreter", "latex", "fontsize", fs);
   set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
 end
