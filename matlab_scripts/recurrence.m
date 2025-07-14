@@ -1,0 +1,130 @@
+clear;
+
+load("../dist2.mat");
+
+clf;
+
+dist = dist / mean(abs(dist), "all");
+imagesc(dist);
+%imagesc(dist/n/n);
+axis square;
+set(gca, "ydir", "normal");
+colorbar();
+clim([0,1]);
+
+%%
+for i = 1:size(fs,1)
+  clf;
+  tiledlayout(1,2);
+  vis( squeeze(fs(i,:,:,:)) );
+  drawnow;
+
+  %saveas(gcf, sprintf("frames/%03d.png", i) );
+end
+
+%%
+idx = [133, 156];
+idx = [237, 261];
+idx = [36, 79];
+
+idx = [128, 137];
+idx = [207, 217];
+idx = [262, 272];
+idx = [70, 81];
+
+idx = [121, 138];
+idx = [394, 403];
+idx = [385, 394];
+
+%idx = [201, 211]
+%idx = [367, 382];
+  
+idx = [157, 171];
+
+dt = 1/256;
+ministeps = 64;
+T = dt*ministeps*(idx(2) - idx(1))
+
+tiledlayout(2,2);  
+
+for i = 1:2
+  vis( squeeze(fs(idx(i),:,:,:)) );
+end
+
+
+%%
+
+n = 256;
+k = 0:n-1;
+k(k>n/2) = k(k>n/2) - n;
+k = reshape(k, 1, []);
+
+%Load all the frames before animating
+frames = 18; %30
+fs = zeros(2,n,n,frames);
+for i = 1:frames
+  i
+  data = load("../traj/" + (i-1) + ".mat");
+  fs(:,:,:,i) = data.f;
+end
+
+
+%%
+figure(1);
+while(true)
+for i = 1:frames
+  i
+  %data = load("../traj/" + i + ".mat");
+
+  f = fs(:,:,:,i);
+
+  f = fft(f, [], 2);
+  f = f .* exp( -1i* i/frames *data.sx * k );
+  f = real(ifft(f, [], 2));
+
+  clf;
+  tiledlayout(1,2);
+  vis(f);
+
+  colormap bluewhitered
+
+  drawnow;
+
+  %saveas(gcf, sprintf("frames/%03d.png", i) );
+end
+end
+
+%%
+figure(2);
+clf;
+%tiledlayout(2,2);
+load("timeseries/" + 0 + ".mat");
+vis(f);
+
+load("timeseries/" + 24 + ".mat");
+vis(f);
+
+
+
+
+function vis(f)
+  fs = 32;
+
+  nexttile
+  data = squeeze(f(1,:,:)).';
+  %imagesc( [data,data;data,data] );
+  imagesc(data);
+  axis square;
+  clim([-10 10]/2);
+  title("$\nabla \times {\bf u}$", "interpreter", "latex", "fontsize", fs);
+  set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
+
+  nexttile
+  data = squeeze(f(2,:,:)).';
+  %imagesc( [data,data;data,data] );
+  imagesc(data);
+  axis square;
+  clim([-10 10]/2);
+  title("$\nabla \times {\bf B}$", "interpreter", "latex", "fontsize", fs);
+  set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
+end

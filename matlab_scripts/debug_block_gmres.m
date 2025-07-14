@@ -1,3 +1,4 @@
+%{
 data = [
 1, 2.771707057952881
 2, 3.035787343978882
@@ -21,11 +22,14 @@ ylabel("walltime (arb)");
 
 xticks(1:2:20);
 yline(2, '--')
+%}
 
-%%
 
 clear
-load('../bgmres.mat');
+
+iteration = 3;
+load( "../debug/bgmres_" + iteration + ".mat");
+load( "../debug/f_vec_" + iteration + ".mat");
 
 
 figure(1);
@@ -39,7 +43,7 @@ title('Q');
 nexttile
 imagesc( log10(abs(Q.'*Q)) );
 colorbar();
-clim([-12 0]);
+clim([-20 0]);
 axis square;
 title('log_{10} |Q^T Q|')
 
@@ -54,10 +58,15 @@ semilogy( svd(H));
 yline(1);
 
 %%
-load("../f_vec.mat");
-
-figure(3)
+figure(2)
 plot_GMRES_residual( Q, H, b );
+
+
+figure(3);
+index = 8;
+f = Q(2:end-1, index);
+vis_vector(f)
+
 
 
 function plot_GMRES_residual( Q, H, b )
@@ -85,33 +94,36 @@ function plot_GMRES_residual( Q, H, b )
   for i = 1:m
     H_sub = H(1:s*(i+1), i:s*i);  
     b_sub = b2(1:size(H_sub,1));
-    
-    [U, S, V] = svd(H_sub, "econ");
 
+    %x_sub = H_sub \ b_sub;
+
+    [U, S, V] = svd( H_sub, "econ");
     S = diag(S);
     S_inv = 1./S;
-    %S_inv( S <1 ) = 1; %conservative inverse
-    %S_inv = S_inv.';
+    S_inv( S < 1.0 ) = 1; %conservative inverse
+    
+    x_sub = U.' * b_sub;
+    x_sub = S_inv .* x_sub;
+    x_sub = V * x_sub;
+    
+    x_sub = pinv(H_sub) * b_sub;
 
-    x_sub = V * S_inv .* U.' * b_sub;
-    x_sub = H_sub \ b_sub;
+    %maxit = 128;
+    %x_sub = lsqr( H_sub, b_sub, 1e-10, maxit);
+
+    %plot(b_sub);
+    %pause(1);
 
     res(i) = norm( H_sub*x_sub - b_sub ) / norm(b_sub);
   end
 
   nexttile
   semilogy( s*(1:m), res, 'o' );
-
 end
 
-figure(2);
-
-index = 60;
-
-f = Q(2:end-1, index);
 
 
-function vis_vector()
+function vis_vector(f)
   n = 128;
   f = reshape(f, [n,n,2]);
 
@@ -127,5 +139,5 @@ function vis_vector()
   axis square;
 
   nexttile
-  imagesc( abs(fftshift(fft2(f(:,:,1)))) )
+  imagesc( abs(fftshift(fft2(f(:,:,1)))))
 end

@@ -10,7 +10,7 @@ from scipy.io import savemat
 
 
 
-def gmres(A, b, m, Q0, s_min, tol=1e-8):
+def gmres(A, b, m, Q0, s_min, tol=1e-8, preconditioner_list=[] ):
     '''
     PURPOSE:
     Solve the linear system Ax=b by constructing a Krylov subspace.
@@ -20,15 +20,29 @@ def gmres(A, b, m, Q0, s_min, tol=1e-8):
     b - right hand side vector
     m - dimension of Krylov subspace
     Q0 - initial vector of Q
+
+    preconditioner_list - an arbitrary length list of preconditioners (M1, M2, ...) to apply to the linear system.
+    GMRES is then applied to the system  Mn*...*M2*M1*A*x = Mn*...*M2*M1*b
+    Each M is a function handle so it evaluates via M(v)
+    
     '''
 
     Q = []
     H = jnp.zeros((m+1, m))
+
+    #Apply preconditioners to both b and Q0
+    for M in preconditioner_list:
+        b  = M(b)
+        Q0 = M(Q0)
+
     Q.append( Q0 / jnp.linalg.norm(Q0) )
 
     for k in range(m):
         qk = Q[k]
         v = A(qk)
+        for M in preconditioner_list:
+            v = M(v)
+
         for j in range(k+1):
             hj = jnp.dot(Q[j], v)
             H = H.at[j, k].set(hj)
@@ -40,13 +54,16 @@ def gmres(A, b, m, Q0, s_min, tol=1e-8):
         Q.append(v / hk1)
 
     # Form least squares problem: min ||beta*e1 - H y||
-    Qmat = jnp.stack(Q, axis=1)  # Shape: (n, m+1)
+    Qmat = jnp.stack(Q, axis=1) # Shape: (n, m+1)
 
     #Project b onto the orthonormal basis
     b2 = Qmat.transpose() @ b
     
     #e1 = jnp.zeros(m+1).at[0].set(beta)
     #y, _, _, _ = jnp.linalg.lstsq(H, b2, rcond=None)
+
+    filename = f"precond_{len(preconditioner_list)}.mat"
+    savemat(filename, {"H": H, "b": b2})
 
     U, s, Vh = jnp.linalg.svd(H, full_matrices=False)
 
@@ -226,3 +243,8 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, precond):
     x = V @ x2
 
     return x
+
+
+
+
+

@@ -16,15 +16,21 @@ if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
 input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_648.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
+#Kolmogorov Re=60
+input_dict, param_dict = dictionaryIO.load_dicts("newton/12.npz")
+
+# By = 1.0, Re = 100
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_760.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/15.npz")
+
 
 for key, value in input_dict.items():
     print(f"Key: {key}, Value: not printing")
 
 for key, value in param_dict.items():
     print(f"Key: {key}, Value: not printing")
-
-
 
 f = input_dict['fields']
 T = input_dict['T']
@@ -35,6 +41,8 @@ dt = T/steps
 
 ministeps = 32
 macrosteps = steps // ministeps
+
+print(macrosteps)
 
 evolve = jax.jit( lambda f: mhd_jax.eark4(f, dt, ministeps, param_dict) )
 

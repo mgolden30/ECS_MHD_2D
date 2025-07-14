@@ -23,7 +23,6 @@ enst = [];
 jenst = [];
 
 for loop = 1:4
-
 for i = 1:4:3*128
   i
   load("traj/" + i + ".mat");

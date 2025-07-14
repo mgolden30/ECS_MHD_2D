@@ -1,10 +1,9 @@
 clear;
 
-load("../dist.mat");
+load("../traj.mat");
 
 
 
-%%
 clf;
 n = 128;
 
@@ -23,31 +22,19 @@ for i = 1:128%size(fs,1)
   vis( squeeze(fs(i,:,:,:)) );
   drawnow;
 
-  saveas(gcf, sprintf("frames/%03d.png", i) );
+  %saveas(gcf, sprintf("frames/%03d.png", i) );
 end
+return;
 
 %%
-%idx = [141, 170];
-%idx = [241, 264];
-idx = [243, 362];
-idx = [555, 582];
-idx = [1015, 1207];
-idx = [1263, 1323];
-idx = [243, 309];
-idx= [556, 593];
+idx = [133, 156];
+idx = [181, 205];
+idx = [456, 474];
 
-idx = [155, 194];
+idx = [385, 416];
+idx = [362, 468];
 
-idx = [147, 189];
-
-%idx = [390, 450];
-idx = [696, 766];
-
-idx = [218, 268];
-
-dt = 0.01;
-ministeps = 32;
-T = dt*ministeps*(idx(2) - idx(1))
+idx = [376, 412]
 
 tiledlayout(2,2);
 
@@ -63,12 +50,16 @@ k = 0:n-1;
 k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
-
+% Prepare the new file.
+    vidObj = VideoWriter('peaks.avi');
+    open(vidObj);
+    
 figure(1);
 %while(true)
-frames = 50
+frames = 24*2
 for i = 0:frames-1
-  load("../timeseries/" + i + ".mat");
+  i
+  load( sprintf("../timeseries/%03d.mat", i) );
 
   f = fft(f, [], 2);
   f = f .* exp( -1i* i/frames *sx * k );
@@ -77,13 +68,19 @@ for i = 0:frames-1
   tiledlayout(1,2);
   vis(f);
 
-  %colormap bluewhitered
+  colormap bluewhitered
+  set(gca, 'Color', 'w');
 
   drawnow;
 
   saveas(gcf, sprintf("frames/%03d.png", i) );
-end
-%end
+% Write each frame to the file.
+       currFrame = getframe(gcf);
+       writeVideo(vidObj,currFrame);
+    end
+  
+    % Close the file.
+    close(vidObj);
 
 %%
 figure(2);
@@ -100,13 +97,15 @@ vis(f);
 
 function vis(f)
   fs = 32;
+  scale = 5;
+
 
   nexttile
   data = squeeze(f(1,:,:)).';
   %imagesc( [data,data;data,data] );
   imagesc(data);
   axis square;
-  clim([-10 10]);
+  clim([-1 1]*scale);
   title("$\nabla \times {\bf u}$", "interpreter", "latex", "fontsize", fs);
   set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
 
@@ -115,7 +114,7 @@ function vis(f)
   %imagesc( [data,data;data,data] );
   imagesc(data);
   axis square;
-  clim([-10 10]);
+  clim([-1 1]*scale);
   title("$\nabla \times {\bf B}$", "interpreter", "latex", "fontsize", fs);
   set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
 end

@@ -199,7 +199,7 @@ def eark4_step(f, dt, param_dict, diss):
 
 def eark4(f, dt, steps, param_dict):
     '''
-    Perform many steps of Exponential Ansatz Runge   -Kutta 4 (EARK4)
+    Perform many steps of Exponential Ansatz Runge-Kutta 4 (EARK4)
     '''
 
     #Construct a diagonal dissipation operator
@@ -217,6 +217,74 @@ def eark4(f, dt, steps, param_dict):
     f = jax.lax.fori_loop( 0, steps, update_f, f)
 
     return f
+
+def tdrk4(f, dt, steps, param_dict):
+    '''
+    Perform forward time evolution with Two Derivative RK4 (TDRK4).
+    This integration scheme requires evaulation of the second time derivative,
+    which we will achieve with autodiff.
+    '''
+
+    v = lambda f: state_vel( f, param_dict, include_dissipation=True )
+
+    #define the Jacobian-vector operator with autodiff
+    jac = lambda f, k: jax.jvp( v, primals=(f,), tangents=(k,) )[1]
+
+    def update_f(_, f):
+        #Stage 1
+        k1 = dt * v(f)
+        a1 = dt * jac(f, k1)
+
+        #Stage 2
+        f_temp = f + k1/2 + a1/8
+        k2 = dt * v(f_temp)
+        a2 = dt * jac(f_temp, k2)
+
+        #quadrature
+        f = f + k1 + a1/6 + a2/3
+        return f
+
+    #Apply to update 
+    f = jax.lax.fori_loop( 0, steps, update_f, f)
+
+    return f
+
+def rk4(f, dt, steps, param_dict):
+    '''
+    Perform forward time evolution with standard RK4.
+    '''
+
+    v = lambda f: state_vel( f, param_dict, include_dissipation=True )
+
+    def update_f(_, f):
+        #Stage 1
+        k1 = dt * v(f)
+        k2 = dt * v(f + k1/2)
+        k3 = dt * v(f + k2/2)
+        k4 = dt * v(f + k3)
+
+        #quadrature
+        f = f + k1/6 + k2/3 + k3/3 + k4/6
+        return f
+
+    #Apply to update 
+    f = jax.lax.fori_loop( 0, steps, update_f, f)
+
+    return f
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -255,7 +323,7 @@ if (__name__ == "__main__"):
 
     # If this file is run as a standalone, we should do benchmarking.
     # Simulation parameters
-    n = 128
+    n = 256
     precision = jnp.float64
     # If you want double precision, change JAX defaults
     if (precision == jnp.float64):
@@ -268,8 +336,8 @@ if (__name__ == "__main__"):
     x = param_dict['x']
     y = param_dict['y']
 
-    nu  = 1/40
-    eta = 1/40
+    nu  = 1/400
+    eta = 1/400
     b0  = [0.0, 1.0]  # Mean magnetic field
     forcing = -4*jnp.cos(4*y)
 

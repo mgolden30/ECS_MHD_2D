@@ -17,13 +17,12 @@ dt = 1/256
 ministeps = 64
 precision = jnp.float64
 
-transient_steps = 512*4
-steps = 256
+transient_steps = 512*4*8
+steps = 512
 
 nu  = 1/100
 eta = 1/100
 b0  = [0.0, 1.0] # Mean magnetic field
-
 
 # If you want double precision, change JAX defaults
 if (precision == jnp.float64):
@@ -45,12 +44,15 @@ param_dict.update( {'nu': nu, 'eta': eta, 'b0': b0, 'forcing': forcing} )
 param_dict.update( {'dt': dt, 'ministeps': ministeps} )
 
 # Initial data
-f = jnp.zeros([2, n, n], dtype=precision)
-f = f.at[0, :, :].set( jnp.cos(x-0.1)*jnp.sin(x+y-1.2) - jnp.sin(3*x-1)*jnp.cos(y-1) + 2*jnp.cos(2*x-1))
-f = f.at[1, :, :].set( jnp.cos(x+2.1)*jnp.sin(y+3.5) - jnp.cos(1-x) )
-    
+#f = jnp.zeros([2, n, n], dtype=precision)
+#f = f.at[0, :, :].set( jnp.cos(x-0.1)*jnp.sin(x+y-1.2) - jnp.sin(3*x-1)*jnp.cos(y-1) + 2*jnp.cos(2*x-1))
+#f = f.at[1, :, :].set( jnp.cos(x+2.1)*jnp.sin(y+3.5) - jnp.cos(1-x) + jnp.sin(x + 5*y - 1 ) )
+key = jax.random.PRNGKey(seed=0)
+f = jax.random.normal( key, shape=[2,n,n] )
+
 #fft the data before we evolve
 f = jnp.fft.rfft2(f)
+f = param_dict['mask'] * f
 
 ############################
 #Integrate a transient
@@ -77,9 +79,19 @@ one_step = jax.jit( lambda f: mhd_jax.eark4(f, dt, ministeps, param_dict) )
 
 fs = jnp.zeros([steps,2,n,n//2+1], dtype=f.dtype )
 start = time.time()
-for i in range(steps):
-    f = one_step(f)
-    fs = fs.at[i,:,:,:].set(f)
+
+#I am learning that jax.lax.scan is a better way to gather forward time integration
+
+def wrapper(f, _):
+    f_new = one_step(f)
+    return f_new, f_new #return carry and what to store
+
+_, fs = jax.lax.scan(  wrapper, f, None, length=steps)
+
+#for i in range(steps):
+#    i
+#    f = one_step(f)
+#    fs = fs.at[i,:,:,:].set(f)
 stop = time.time()
 print(f"Generating {steps} steps of turbulence took {stop-start} seconds.")
 
@@ -96,11 +108,10 @@ plt.close()
 start = time.time()
 dist = jnp.zeros([steps, steps])
 for i in range(steps):
-    #diff = fs - fs[i,:,:,:]    
-    #diff = jnp.fft.irfft2(diff)
+    diff = fs - fs[i,:,:,:]    
+    diff = jnp.fft.irfft2(diff)
 
-    diff = jnp.abs(fs) - jnp.abs(fs[i,:,:,:])    
-
+    #diff = jnp.abs(fs) - jnp.abs(fs[i,:,:,:])    
     diff = jnp.reshape( diff, [steps, -1] ) #shape [steps, 2*n*n]
 
     dist = dist.at[:,i].set( jnp.linalg.vector_norm(diff, axis=1) )
@@ -121,9 +132,9 @@ plt.savefig("figures/recurrence.png", dpi=1000)
 
 
 input_dict = {"fs": fs, "dist": dist}
-dictionaryIO.save_dicts( "turb.npz", input_dict, param_dict )
+dictionaryIO.save_dicts( "turb2.npz", input_dict, param_dict )
 
 
 #Save to MATLAB format for interactive visualization
 fs = jnp.fft.irfft2(fs)
-savemat( "dist.mat", {"dist": dist, "fs": fs} )
+savemat( "dist2.mat", {"dist": dist, "fs": fs} )
