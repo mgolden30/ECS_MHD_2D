@@ -77,7 +77,7 @@ def objective_RPO_with_checkpoints( input_dict, param_dict ):
     '''
     PURPOSE:
     Define a vector objective for Relative Periodic Orbits (RPOs). 
-    This variant has checkpointing so that reverse mode differentiation doesn't run out of memory
+    This variant has checkpointing so that jax.jvp doesn't run out of memory and I can use adjoint information for Newton.
     '''
 
     # Unpack tensors we need 
@@ -85,15 +85,49 @@ def objective_RPO_with_checkpoints( input_dict, param_dict ):
     T  = input_dict['T']
     sx = input_dict['sx']
 
-    ministeps= param_dict['steps']
-    num_checkpoints=param_dict['num_checkpoints']
-    steps = ministeps * num_checkpoints
+    ministeps = param_dict['ministeps']
+    num_checkpoints = param_dict['num_checkpoints']
+    dt = T/(ministeps * num_checkpoints)
+
+    print(ministeps)
+    print(type(ministeps))
+    print(num_checkpoints)
+    print(type(num_checkpoints))
 
     f  = jnp.fft.rfft2(f)
     f0 = jnp.copy(f)
 
-    dt = T/steps
-    f = mhd_jax.eark4_with_checkpoints(f, dt, ministeps, num_checkpoints, param_dict )
+    def make_eark4(steps):
+        def eark4(f, dt, param_dict):
+            '''
+            Perform many steps of Exponential Ansatz Runge-Kutta 4 (EARK4)
+            '''
+
+            #Construct a diagonal dissipation operator
+            diss = jnp.zeros_like(f)
+            k_sq = jnp.square(param_dict['kx']) + jnp.square(param_dict['ky'] )
+            diss = diss.at[0,:,:].set( jnp.exp( -param_dict['nu']  * k_sq * dt / 2 ) )
+            diss = diss.at[1,:,:].set( jnp.exp( -param_dict['eta'] * k_sq * dt / 2 ) )
+            diss = diss * param_dict['mask']
+
+            #Need this lambda format to use fori_loop
+            #Might as well jit it since we call this update a lot
+            update_f = lambda _, f: mhd_jax.eark4_step(f, dt, param_dict, diss)
+            #Apply to update 
+            f = jax.lax.fori_loop( 0, steps, update_f, f)
+            
+            #ChatGPT solution using scan
+            #def step_fn(f, _):
+            #    return mhd_jax.eark4_step(f, dt, param_dict, diss), None
+
+            #f, _ = jax.lax.scan(step_fn, f, None, length=steps)
+            return f
+        return eark4
+    
+    #Define an integration routine that checkpoints
+    safe_eark4 = jax.checkpoint( make_eark4(ministeps) )
+    update_f = lambda _, f: safe_eark4(f, dt, param_dict)
+    f = jax.lax.fori_loop( 0, num_checkpoints, update_f, f)
 
     #Shift the resulting fields
     f = jnp.exp( -1j * param_dict['kx'] * sx ) * f
