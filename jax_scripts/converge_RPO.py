@@ -30,6 +30,9 @@ idx = [201, 211]
 idx = [367, 382]
 idx = [385, 394]
 idx = [157, 171]
+idx = [233, 266]
+idx = [276, 290]
+
 
 #Get conditions for RPO guess
 f = turb_dict['fs'][idx[0]-1,:,:,:]
@@ -56,9 +59,14 @@ del param_dict['ministeps']
 #Or, load dicts from a previous run
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_160.npz")
 
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
+
+
 #For some reason JAX complains that "steps" is not a constant unless I override is as an integer
 param_dict['steps'] = int(param_dict['steps'])
 print(f"using {param_dict['steps']} timesteps of type {type(param_dict['steps'])} ")
+
+
 
 
 ###############################
@@ -90,7 +98,8 @@ for t in range(maxit):
     stop = time.time()
     walltime = stop-start
 
-    lr = 1e-3
+    #lr = 1e-3
+    lr = 1e-4  
     input_dict, m, v = update_fn(input_dict, grad, m, v, t+1, lr=lr, beta1=0.9, beta2=0.999, eps=1e-6)
 
     #dealias

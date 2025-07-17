@@ -1,5 +1,7 @@
 '''
 Perform Newton-GMRES to converge RPOs
+
+In this variant, I would like to get the adjoint of the Jacobian working.
 '''
 
 import time
@@ -10,7 +12,7 @@ import jax.numpy as jnp
 import lib.mhd_jax as mhd_jax
 import lib.loss_functions as loss_functions
 import lib.adam as adam
-from lib.linalg import gmres
+from lib.linalg import adjoint_GMRES
 import lib.dictionaryIO as dictionaryIO
 import lib.preconditioners as precond
 
@@ -26,41 +28,57 @@ if (precision == jnp.float64):
 
 input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
 input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_680.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/8.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/11.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE3.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/1.npz")
 
 
-#input_dict, param_dict = dictionaryIO.load_dicts("Re40/RPO1.npz")
-
+#define number of segements
+num_checkpoints = 8
+param_dict.update(  {"ministeps": int(param_dict["steps"]//num_checkpoints), "num_checkpoints": int(num_checkpoints)})
 
 #Define the RPO objective function and compile it
-objective = jax.jit( lambda input_dict: loss_functions.objective_RPO(input_dict, param_dict) )
+objective = jax.jit( lambda input_dict: loss_functions.objective_RPO_with_checkpoints(input_dict, param_dict) )
 f = objective(input_dict)
+
+start = time.time()
+f = objective(input_dict)
+stop = time.time()
+walltime0 = stop - start
 
 #Define the Jacobian action and compile it
 jac = jax.jit( lambda primal, tangent: jax.jvp( objective, (primal,), (tangent,))[1] )
-_ = jac( input_dict, f )
+_ = jac( input_dict, input_dict )
 
-#Add phase conditions and compile it
-jac_with_phase = jax.jit( lambda primal, tangent: loss_functions.add_phase_conditions( primal, tangent, jac(primal, tangent), param_dict) )
-_ = jac_with_phase( input_dict, f )
+start = time.time()
+Jf = jac( input_dict, input_dict )
+stop = time.time()
+walltime1 = stop - start
 
 
+#Define the transpose of the Jacobian action
+_, jacT = jax.vjp( objective, input_dict, has_aux=False )
+jacT = jax.jit(jacT)
+Jtf = jacT(f)
+
+start = time.time()
+Jtf = jacT(f)
+stop = time.time()
+walltime2 = stop - start
+
+print(f"Evaluating objective: {walltime0:.3} seconds")
+print(f"Evaluating Jacobian: {walltime1:.3} seconds")
+print(f"Evaluating Jacobian transpose: {walltime2:.3} seconds")
 
 
 ######################################
 # Newton-GMRES starts here
 ######################################
 
-use_basic_gmres = True
-
 maxit = 1024
-inner = 128
+inner = 256
 outer = 1
-damp  = 1.0
-s_min = 1e-2
+damp  = 0.25
+#s_min = 1e-2
  
 for i in range(maxit):
     #Evaluate the objective function
@@ -69,25 +87,26 @@ for i in range(maxit):
     stop = time.time()
     f_walltime = stop - start
 
-    #f is a dictionary. Turn it into a single vector for linear algebra
-    f_vec, unravel_fn = jax.flatten_util.ravel_pytree(f)
+    #f and input_dict are dictionaries. Flatten them into vectors for linear algebra
+    f_vec, unravel_fn_left  = jax.flatten_util.ravel_pytree(f)
+    _,     unravel_fn_right = jax.flatten_util.ravel_pytree(input_dict)
 
     #Compute the magnitude of the state vector
     s_vec, _ = jax.flatten_util.ravel_pytree( {"fields": input_dict['fields']} )
-
-    print(f"{jnp.linalg.norm(f_vec) / jnp.linalg.norm(s_vec)}")
+    print(f"relative error {jnp.linalg.norm(f_vec) / jnp.linalg.norm(s_vec):.3e}")
 
     #Define a linear operator for GMRES
     #Do this every iteration since input_dict changes
-    lin_op = lambda v:  jax.flatten_util.ravel_pytree(  jac_with_phase( input_dict, unravel_fn(v))  )[0]
+    lin_op = lambda v:  jax.flatten_util.ravel_pytree(  jac( input_dict, unravel_fn_right(v))  )[0]
 
-    #Include any preconditioners of interest:
-    #M1 = precond.dissipation_preconditioner( input_dict, param_dict, unravel_fn )
-    M1 = precond.linear_dynamics_preconditioner( input_dict, param_dict, unravel_fn )
+    #Define a linear operator for the transpose
+    _, jacT = jax.vjp( objective, input_dict, has_aux=False )
+    lin_op_T = jax.jit( lambda v: jax.flatten_util.ravel_pytree( jacT(unravel_fn_left(v)) )[0] )
 
     #Do GMRES
     start = time.time()
-    step = gmres( lin_op, f_vec, inner, f_vec, s_min, preconditioner_list=[], output_index=i )
+    step = adjoint_GMRES( lin_op, lin_op_T, f_vec, f_vec.size, f_vec.size+2, inner)
+    #step = gmres( lin_op, f_vec, inner, f_vec, s_min, preconditioner_list=[], output_index=i )
     stop = time.time()
     gmres_walltime = stop - start
 
@@ -95,14 +114,13 @@ for i in range(maxit):
     
     #update the input_dict
     x, unravel_fn = jax.flatten_util.ravel_pytree( input_dict )
-    #x = x - damp * step
     
     #Do a line search
     damp = 1.0
     for _ in range(20):
         x_temp = x - damp * step
         temp_dict = unravel_fn(x_temp)
-        f_temp = objective(input_dict)
+        f_temp = objective(temp_dict)
         f_temp_vec = jax.flatten_util.ravel_pytree(f_temp)[0]
 
         print(f"Trying damp = {damp:.3e}")
@@ -110,7 +128,6 @@ for i in range(maxit):
             x = x_temp
             break
         damp = damp/2
-    
     input_dict = unravel_fn(x)
 
     #Dealias after every Newton step

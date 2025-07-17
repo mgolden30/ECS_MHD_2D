@@ -10,7 +10,7 @@ from scipy.io import savemat
 
 
 
-def gmres(A, b, m, Q0, s_min, tol=1e-8, preconditioner_list=[] ):
+def gmres(A, b, m, Q0, s_min, tol=1e-8, preconditioner_list=[], output_index=0 ):
     '''
     PURPOSE:
     Solve the linear system Ax=b by constructing a Krylov subspace.
@@ -24,7 +24,6 @@ def gmres(A, b, m, Q0, s_min, tol=1e-8, preconditioner_list=[] ):
     preconditioner_list - an arbitrary length list of preconditioners (M1, M2, ...) to apply to the linear system.
     GMRES is then applied to the system  Mn*...*M2*M1*A*x = Mn*...*M2*M1*b
     Each M is a function handle so it evaluates via M(v)
-    
     '''
 
     Q = []
@@ -47,10 +46,16 @@ def gmres(A, b, m, Q0, s_min, tol=1e-8, preconditioner_list=[] ):
             hj = jnp.dot(Q[j], v)
             H = H.at[j, k].set(hj)
             v = v - hj * Q[j]
+
+        #Reorthogonalize a couple of times
+        for _ in range(2):
+            for j in range(k+1):
+                hj = jnp.dot(Q[j], v)
+                v = v - hj * Q[j]
+
+
         hk1 = jnp.linalg.norm(v)
         H = H.at[k+1, k].set(hk1)
-        if hk1 < tol:
-            break
         Q.append(v / hk1)
 
     # Form least squares problem: min ||beta*e1 - H y||
@@ -62,8 +67,8 @@ def gmres(A, b, m, Q0, s_min, tol=1e-8, preconditioner_list=[] ):
     #e1 = jnp.zeros(m+1).at[0].set(beta)
     #y, _, _, _ = jnp.linalg.lstsq(H, b2, rcond=None)
 
-    filename = f"precond_{len(preconditioner_list)}.mat"
-    savemat(filename, {"H": H, "b": b2})
+    filename = f"gmres_debug_{output_index}.mat"
+    savemat(filename, {"H": H, "b": b2, "f": b, "Q": Q})
 
     U, s, Vh = jnp.linalg.svd(H, full_matrices=False)
 
@@ -172,16 +177,12 @@ def block_gmres(A, b, m, B, tol=1e-8, iteration=0):
 
 
 
-def adjoint_GMRES( A, A_t, b, m, n, inner, precond):
+def adjoint_GMRES( A, A_t, b, m, n, inner):
     '''
     PURPOSE:
-    Traditional GMRES requires the matrix A to be square so that power iteration
-    can be applied. This is stupid. Why should A be square? Even if A is square, not all R^n are equivalent physically.
-    What physical meaning does power iteration actually have in such contexts?
-
-    In light of this thinking, consider the linear map A : X -> Y, where X and Y are vector spaces.
-    We want to solve the linear system Ax=b, where x is in X and b is in Y. We build an orthonormal basis of X and Y
-    with Gram-Schmidt iteration by applying A and the adjoint of A.
+    Minimize the 2 norm of Ax-b where x is constrained to the subspace span( A^T b, (A^T A) A^T b, ..., (A^T A)^n A^T b )
+    This differs from typical GMRES where A is assumed square. Here A can be non-square, but it requires the implementation
+    of the transpose.
 
     INPUT:
     A - linear operator
@@ -189,7 +190,6 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, precond):
     b - right hand side (solve Ax=b)
     m,n - Assume A is an m-by-n matrix. These are just matrix dimensions
     inner - how many inner iterations to do. an inner iteration consists of both an evaluation of A and A_t.
-    precond - preconditioner
 
     OUTPUT:
     x - the approximate solution to Ax=b
@@ -199,36 +199,44 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, precond):
     U = jnp.zeros((m, inner+1))
     V = jnp.zeros((n, inner))
 
-    #Apply preconditioner to b
-    b = precond( b, "notrans" )
-
     #Generate our orthonormal basis vectors with b
     U = U.at[:,0].set( b / jnp.linalg.norm(b) )
 
     #Power iteration
     for i in range(inner):
         #Apply (MA)^T
-        Au = precond(U[:,i], "trans")
-        Au = A_t(Au)
+        Au = A_t(U[:,i])
 
         #Orthogonalize with respect to previous V
         for j in range(i):
             B = B.at[i,j].set(jnp.dot( V[:,j], Au ))
             Au = Au - B[i,j]*V[:,j]
-
+        
+        #Reorthogonalize to ensure numerical stability
+        for _ in range(2):
+            for j in range(i):
+                Bij = jnp.dot( V[:,j], Au )
+                Au = Au - Bij*V[:,j]
+            
         #Define new vector of V
         B = B.at[i,i].set(jnp.linalg.norm(Au))
         V = V.at[:,i].set( Au / B[i,i] )
 
         #Apply MA
         Av = A(V[:,i])
-        Av = precond(Av, "notrans")
-
+        
         #Orthogonalize    
         for j in range(i+1):
             B  = B.at[j,i].set(jnp.dot( U[:,j], Av ))
             Av = Av - B[j,i]*U[:,j]
     
+        #Reorthogonalize to ensure numerical stability
+        for _ in range(2):
+            for j in range(i+1):
+                Bji  = jnp.dot( U[:,j], Av )
+                Av = Av - Bji*U[:,j]
+
+
         B = B.at[i+1,i].set(jnp.linalg.norm(Av))
         U = U.at[:,i+1].set(Av / B[i+1,i])
 
@@ -241,6 +249,8 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, precond):
     
     #Rotate to full space
     x = V @ x2
+
+    savemat("debug_adjoint_GMRES.mat", {"U": U, "V": V, "b": b2, "B": B})
 
     return x
 
