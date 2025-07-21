@@ -17,10 +17,10 @@ if (precision == jnp.float64):
 
 input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_648.npz")
 #Kolmogorov Re=60
-input_dict, param_dict = dictionaryIO.load_dicts("newton/12.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("newton/812.npz")
 
 # By = 1.0, Re = 100
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_760.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("newton/15.npz")

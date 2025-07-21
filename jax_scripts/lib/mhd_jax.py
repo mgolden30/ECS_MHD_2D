@@ -136,9 +136,19 @@ def state_vel(fields, param_dict, include_dissipation ):
     fu = jnp.fft.irfft2(1j * to_u * fields)
     fv = jnp.fft.irfft2(1j * to_v * fields)
 
-    # Add mean magnetic field
+    #Define the mean field components to broadcast
+    #I should also add in mean flow
+    bx = jnp.reshape( jnp.array( [0, b0[0]] ), [2,1,1] )
+    by = jnp.reshape( jnp.array( [0, b0[1]] ), [2,1,1] )
+    
+    fu = fu + bx
+    fv = fv + by
+    
+    '''    
+    # Add mean magnetic field.
     fu = fu.at[1, :, :].set(fu[1, :, :] + b0[0])
     fv = fv.at[1, :, :].set(fv[1, :, :] + b0[1])
+    '''
 
     #Note this computes the u dot grad w and B dot grad j
     advection = fu * fx + fv * fy
@@ -146,22 +156,27 @@ def state_vel(fields, param_dict, include_dissipation ):
     k_sq = (kx*kx + ky*ky)*mask
 
     # vorticity dynamics
-    dwdt = -advection[0, :, :] + advection[1, :, :] + forcing
+    #weight = jnp.reshape( jnp.array([-1,1]), [2,1,1] )
+    #dwdt = jnp.sum( advection*weight, axis=-3 ) + forcing
+    dwdt = -advection[..., 0, :, :] + advection[..., 1, :, :] + forcing
     dwdt = mask * jnp.fft.rfft2(dwdt)
 
     # Current dynamics
-    djdt = fu[0, :, :]*fv[1, :, :] - fv[0, :, :]*fu[1, :, :]
+    djdt = fu[..., 0, :, :]*fv[..., 1, :, :] - fv[..., 0, :, :]*fu[..., 1, :, :]
     djdt = k_sq * jnp.fft.rfft2(djdt)
+        
+    # Get a total state velocity
+    dwdt = jnp.expand_dims(dwdt, axis=-3)
+    djdt = jnp.expand_dims(djdt, axis=-3)
+    dfdt = jnp.concatenate([dwdt, djdt], axis=-3)
 
     if include_dissipation:
-        dwdt += - nu  * k_sq * fields[0,:,:]
-        djdt += - eta * k_sq * fields[1,:,:]
+        coeffs = jnp.reshape( jnp.array([nu, eta]), [2,1,1] )
+        dfdt += - coeffs * k_sq * fields
         
-    # Get a total velocity
-    dwdt = jnp.expand_dims(dwdt, axis=0)
-    djdt = jnp.expand_dims(djdt, axis=0)
-    dfdt = jnp.concatenate([dwdt, djdt], axis=0)
     return dfdt
+
+
 
 
 def eark4_step(f, dt, param_dict, diss):
@@ -170,12 +185,11 @@ def eark4_step(f, dt, param_dict, diss):
     We do operator splitting to handle the dissipation implicitly and avoid small timesteps.
     '''
     
-    #Don't compute dissipation explicitly
     vel = lambda f: dt * state_vel( f, param_dict, include_dissipation=False )
 
     #EARK4 looks like RK$ but with exponential twiddles that you interleave.
     k1 = vel(f)
-
+    
     f  =  f*diss
     k1 = k1*diss
     
@@ -203,12 +217,11 @@ def eark4(f, dt, steps, param_dict):
     '''
 
     #Construct a diagonal dissipation operator
-    diss = jnp.zeros_like(f)
+    diss_coeffs = jnp.array( [param_dict['nu'], param_dict['eta']] )
+    diss_coeffs = jnp.reshape(diss_coeffs, [2,1,1])
     k_sq = jnp.square(param_dict['kx']) + jnp.square(param_dict['ky'] )
-    diss = diss.at[0,:,:].set( jnp.exp( -param_dict['nu']  * k_sq * dt / 2 ) )
-    diss = diss.at[1,:,:].set( jnp.exp( -param_dict['eta'] * k_sq * dt / 2 ) )
-    diss = diss * param_dict['mask']
-
+    diss = jnp.exp( - diss_coeffs  * k_sq * dt / 2 ) * param_dict['mask']
+    
     #Need this lambda format to use fori_loop
     #Might as well jit it since we call this update a lot
     update_f = jax.jit( lambda _, f: eark4_step(f, dt, param_dict, diss) )

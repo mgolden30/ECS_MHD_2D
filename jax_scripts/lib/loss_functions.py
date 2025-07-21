@@ -40,6 +40,55 @@ def loss_RPO( input_dict, param_dict ):
     return loss
 
 
+def objective_RPO_multishooting( input_dict, param_dict ):
+    '''
+    PURPOSE:
+    Define a vector objective for Relative Periodic Orbits (RPOs). We can use Newton methods to converge this.
+    This variant assumes the state is for multishooting
+    '''
+
+    #Map initial data to Fourier space
+    f0  = jnp.fft.rfft2(input_dict['fields'])
+
+    #Compute timestep and steps per segment, which I call ministeps
+    #Here the period T and steps are defined for the WHOLE orbit
+    dt = input_dict["T"]/param_dict["steps"]
+    #ministeps = param_dict["ministeps"] #steps / segment
+    miniministeps = param_dict["miniministeps"] #ministeps / checkpoint
+    
+    def make_eark4(steps):
+        def eark4(f, dt, param_dict):
+            '''
+            Perform many steps of Exponential Ansatz Runge-Kutta 4 (EARK4)
+            '''
+            #Construct a diagonal dissipation operator
+            diss_coeffs = jnp.array( [param_dict['nu'], param_dict['eta']] )
+            diss_coeffs = jnp.reshape(diss_coeffs, [2,1,1])
+            k_sq = jnp.square(param_dict['kx']) + jnp.square(param_dict['ky'] )
+            diss = jnp.exp( - diss_coeffs  * k_sq * dt / 2 ) * param_dict['mask']
+            
+            #Need this lambda format to use fori_loop
+            update_f = lambda _, f: mhd_jax.eark4_step(f, dt, param_dict, diss)
+            f = jax.lax.fori_loop( 0, steps, update_f, f)            
+            return f
+        return eark4
+    
+    #Define an integration routine that checkpoints
+    safe_eark4 = jax.checkpoint( make_eark4(miniministeps) )
+    update_f = lambda _, f: safe_eark4(f, dt, param_dict)
+    f = jax.lax.fori_loop( 0, param_dict["checkpoints"], update_f, f0)
+
+    #Shift the resulting fields
+    f = jnp.exp( -1j * param_dict['kx'] * input_dict['sx'] / param_dict['segments'] ) * f
+
+    #compute the mismatch
+    diff = jnp.fft.irfft2(f0 - jnp.roll(f, shift=1, axis=0))
+
+    #Return a dictionary
+    output_dict = {'fields': diff}
+
+    return output_dict
+
 
 def objective_RPO( input_dict, param_dict ):
     '''
@@ -57,16 +106,17 @@ def objective_RPO( input_dict, param_dict ):
     f0 = jnp.copy(f)
 
     dt = T/steps
+
     f = mhd_jax.eark4(f, dt, steps, param_dict )
 
     #Shift the resulting fields
     f = jnp.exp( -1j * param_dict['kx'] * sx ) * f
 
     #compute the mismatch
-    diff   = f - f0
+    diff = f - f0
 
     #Transform back to real space
-    diff   = jnp.fft.irfft2(diff)
+    diff = jnp.fft.irfft2(diff)
 
     #Return a dictionary
     output_dict = {'fields': diff, 'T': 0.0, 'sx': 0.0}

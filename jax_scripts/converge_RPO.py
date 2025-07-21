@@ -60,6 +60,7 @@ del param_dict['ministeps']
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_160.npz")
 
 input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("newton/1.npz")
 
 
 #For some reason JAX complains that "steps" is not a constant unless I override is as an integer
@@ -99,7 +100,7 @@ for t in range(maxit):
     walltime = stop-start
 
     #lr = 1e-3
-    lr = 1e-4  
+    lr = 1e-5  
     input_dict, m, v = update_fn(input_dict, grad, m, v, t+1, lr=lr, beta1=0.9, beta2=0.999, eps=1e-6)
 
     #dealias

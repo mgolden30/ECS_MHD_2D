@@ -1,148 +1,140 @@
 '''
-Let's use JAX to hunt for RPOs. I got it working for single shooting, but the memory requirement is quite nasty.
-I think multishooting is the solution. Break up integration into segements. Compute grad one segment at a time.
+Written July 18th 2025 by Matthew Golden
+
+Version 1.0
+Notes go here
 '''
 
+import jax.flatten_util
 import lib.mhd_jax as mhd_jax
 import time
 import jax
 import jax.numpy as jnp
+import lib.dictionaryIO as dictionaryIO
+import lib.loss_functions as loss_functions
+import lib.adam as adam
+
 
 from scipy.io import savemat, loadmat
 
-# Simulation parameters
-n = 256  # grid resolution
-precision = jnp.float64  # Double or single precision
-
-# If you want double precision, change JAX defaults
+precision = jnp.float64
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-# Generate grid information
-x, y, kx, ky, mask, to_u, to_v = mhd_jax.construct_domain(n, precision)
+#Read in a state
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
 
-nu = 1/100  # hydro dissipation
-eta = 1/100  # magnetic dissipation
+#Check if this is a multishooting state
+if "segments" in param_dict:
+    print("Loaded multishooting state.")
+else:
+    segments = 8
+    print(f"Loaded single shooting state. Creating a multishooting state with {segments} segments...")
 
-# Mean magnetic field
-b0 = [0.0, 1.0]
+    #Read grid resolution n 
+    n = input_dict['fields'].shape[-1]
 
-# Construct your forcing
-forcing = -4*jnp.cos(4*y)
+    #allocate memory 
+    f = jnp.zeros([segments, 2, n, n], dtype=precision)
 
-# Initial data
-segments = 8 # Break up the trajectory into this many segments
-f = jnp.zeros([segments, 2, n, n], dtype=precision)
+    #Set initial segment from single shooting data
+    f = f.at[0,:,:,:].set(input_dict['fields'])
 
-# Load a single shooting guess and use it to construct the multishooting initial state
-#my_dict = loadmat("converged_RPO_14721.mat")
+    #compute timestep
+    dt = input_dict['T']/param_dict['steps']
+    assert(param_dict['steps'] % segments == 0)
+    ministeps = param_dict['steps']//segments
+    param_dict.update({'segments': segments})
 
-T = my_dict["T"][0][0]
-sx = my_dict["sx"][0][0]
-f_mini = my_dict["f"]
-f_mini = jnp.fft.rfft2(f_mini)
+    @jax.jit
+    def next_segment(f):
+        #Integrate forward a bit
+        g = jnp.fft.rfft2(f)
+        g = mhd_jax.eark4(g, dt, ministeps, param_dict)
 
-#I hard-coded 256 timesteps into single shooting due to memory constraints
-h = T/256 
+        #Translate in space
+        g = jnp.exp( -1j * param_dict['kx'] * input_dict['sx'] / segments ) * g
+        g = jnp.fft.irfft2(g)
+        return g
 
-mini_steps = round(256 / segments)
+    #Integrate forward
+    for i in range(segments-1):
+        print(i)
+        g = next_segment(f[i,:,:,:])
+        f = f.at[i+1,:,:,:].set(g)
 
-jit_rk4_step = jax.jit(mhd_jax.rk4_step)
+    #Update the state dictionary to contain a set of multishooting points
+    input_dict['fields'] = f
 
-for i in range(segments):
-    f_mini = jnp.fft.irfft2(f_mini)
-    f = f.at[i, :, :, :].set(f_mini)
-    
-    f_mini = jnp.fft.rfft2(f_mini)
-    for j in range(mini_steps):
-        f_mini = jit_rk4_step( f_mini, kx, ky, to_u, to_v, mask, nu, eta, forcing, b0, h)
+#How many checkpoints do we want to keep memory down?
+param_dict.update({"checkpoints": 8})
+
+#Do sanity checks + initialization of ministeps and miniministeps
+assert(param_dict['steps'] % segments == 0)
+ministeps = param_dict["steps"] // param_dict["segments"]
+assert( ministeps % param_dict["checkpoints"] == 0 )
+miniministeps = ministeps // param_dict["checkpoints"]
+
+param_dict.update({"ministeps": ministeps, "miniministeps": miniministeps})
+
+start = time.time()
+loss = loss_functions.objective_RPO_multishooting( input_dict, param_dict )
+stop = time.time()
+
+print(f"Computed objective in {stop-start:.3e} seconds.")
+
+for i in range(param_dict['segments']):
+    diff = loss['fields'][i,:,:,:]
+    print(f"max abs error in segment #{i} = {jnp.max(jnp.abs(diff)):.6f}")
 
 
-# FOr multishooting, I want T and sx to be period and shift per segment
-T = T/segments
-sx= sx/segments
+#Take the 2-norm of the RPO objective
+scalar_loss = lambda input_dict: jnp.linalg.norm( jax.flatten_util.ravel_pytree( loss_functions.objective_RPO_multishooting(input_dict, param_dict) )[0] )
+
+#Define a gradient function
+
+grad_fn = jax.jit(jax.value_and_grad(scalar_loss))
+_, _ = grad_fn(input_dict)
+
+start = time.time()
+val, grad = grad_fn(input_dict)
+stop = time.time()
+
+print(f"Calculated val = {val:.3e} in {stop-start:.3f} seconds.")
 
 
 
-def adam_update(params, grads, m, v, t, lr=1e-3, beta1=0.9, beta2=0.999, eps=1e-8):
-    """
-    Performs one update step of the ADAM optimizer for a single parameter array.
 
-    :param params: NumPy array of parameters to be updated.
-    :param grads: NumPy array of gradients (same shape as params).
-    :param m: First moment estimate (same shape as params).
-    :param v: Second moment estimate (same shape as params).
-    :param t: Time step (integer, should be incremented after each update).
-    :param lr: Learning rate.
-    :param beta1: Decay rate for first moment estimate.
-    :param beta2: Decay rate for second moment estimate.
-    :param eps: Small number to prevent division by zero.
-    :return: Updated parameters, updated first moment (m), updated second moment (v).
-    """
-    m = beta1 * m + (1 - beta1) * grads
-    v = beta2 * v + (1 - beta2) * (grads ** 2)
 
-    # Bias correction
-    m_hat = m / (1 - beta1 ** t)
-    v_hat = v / (1 - beta2 ** t)
 
-    # Update parameters
-    params = params - lr * m_hat / (jnp.sqrt(v_hat) + eps)
 
-    return params, m, v
+###############################
+# Adjoint descent time
+###############################
 
-steps = 1024
+m, v = adam.init_adam(input_dict)
+maxit = 10000000
 
-z = mhd_jax.pack_RPO_multi( f, T, sx, n, segments)
-
-m = 0*z
-v = 0*z
-
-maxit = 1000000
-
-loss_fn = jax.jit(mhd_jax.loss_RPO_multi)
-grad_fn = jax.jit(jax.grad(loss_fn, argnums=0))
-
-update_fn = jax.jit(adam_update)
-
-my_dict = loadmat("data/converged_RPO_4225.mat")
-
-T = my_dict["T"][0][0]
-sx = my_dict["sx"][0][0]
-f= my_dict["f"]
-
-z = mhd_jax.pack_RPO_multi(f, T, sx, n, segments)
-
+#Jit the update routine for ADAM to attempt some speedup
+update_fn = jax.jit(adam.adam_update)
 
 for t in range(maxit):
-
     start = time.time()
-    loss = 0.0
-    for seg in range(segments):
-        loss = loss + loss_fn(z, steps, kx, ky, to_u, to_v, mask, nu, eta, forcing, b0, n, seg)
-    loss_time = time.time() - start
+    loss, grad = grad_fn(input_dict)
+    stop = time.time()
+    walltime = stop-start
 
-    start = time.time()
-    grad = 0*z
-    for seg in range(segments):
-        grad = grad + grad_fn(z, steps, kx, ky, to_u, to_v, mask, nu, eta, forcing, b0, n, seg)
-    grad_time = time.time() - start
+    lr = 1e-4
+    input_dict, m, v = update_fn(input_dict, grad, m, v, t+1, lr=lr, beta1=0.9, beta2=0.999, eps=1e-6)
 
-    # ADAM optimization
-    #lr = 1e-2 got pretty close  p
-    z, m, v = update_fn(z, grad, m, v, t+1, lr=5e-4, beta1=0.9, beta2=0.999, eps=1e-6)
-
-    f, T, vx = mhd_jax.unpack_RPO_multi(z)
-    
-    f = jnp.fft.rfft2(f)
-    f = f * mask
+    #dealias
+    f = input_dict['fields']
+    f = jnp.fft.rfft2(f) * param_dict['mask']
     f = jnp.fft.irfft2(f)
+    input_dict['fields'] = f
+
+    print(f"{t}: loss = {loss}, walltime: {walltime}, T = {input_dict['T']}")
     
-    z =  mhd_jax.pack_RPO_multi(f, T , sx, n, segments)
-
-    #if (t % 128 == 1):
-    print(f"{t}: loss = {loss}, loss_time = {loss_time}, grad_time = {grad_time}")
-
-    if ( t % 128 == 1 ):
-        f, T, sx = mhd_jax.unpack_RPO_multi(z)
-        savemat( f"data/converged_RPO_{t}.mat", {"f": f, "T": T, "sx": sx})
+    if ( t % 8 == 0 ):
+        dictionaryIO.save_dicts( f"data/adjoint_descent_{t}.npz", input_dict, param_dict )

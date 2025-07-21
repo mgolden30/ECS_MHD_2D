@@ -9,13 +9,13 @@ import jax
 import jax.flatten_util
 import jax.numpy as jnp
 
-import lib.mhd_jax as mhd_jax
+#import lib.mhd_jax as mhd_jax
 import lib.loss_functions as loss_functions
-import lib.adam as adam
 from lib.linalg import adjoint_GMRES
 import lib.dictionaryIO as dictionaryIO
 import lib.preconditioners as precond
 
+from scipy.io import savemat
 
 ###############################
 # Construct numerical grid
@@ -28,16 +28,30 @@ if (precision == jnp.float64):
 
 input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
 input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_680.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE3.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/1.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_112.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/17.npz")
 
 
-#define number of segements
-num_checkpoints = 8
-param_dict.update(  {"ministeps": int(param_dict["steps"]//num_checkpoints), "num_checkpoints": int(num_checkpoints)})
+mode = "multi_shooting"
 
-#Define the RPO objective function and compile it
-objective = jax.jit( lambda input_dict: loss_functions.objective_RPO_with_checkpoints(input_dict, param_dict) )
+if mode == "single_shooting":
+    #define number of segements for memory checkpointing
+    num_checkpoints = 8
+    param_dict.update(  {"ministeps": int(param_dict["steps"]//num_checkpoints), "num_checkpoints": int(num_checkpoints)})
+
+    #Define the RPO objective function
+    objective = jax.jit( lambda input_dict: loss_functions.objective_RPO_with_checkpoints(input_dict, param_dict) )
+
+if mode == "multi_shooting":
+    #Define the RPO objective function
+    objective = jax.jit( lambda input_dict: loss_functions.objective_RPO_multishooting(input_dict, param_dict) )
+
+
+
+#Compile the objective function
 f = objective(input_dict)
 
 start = time.time()
@@ -54,7 +68,6 @@ Jf = jac( input_dict, input_dict )
 stop = time.time()
 walltime1 = stop - start
 
-
 #Define the transpose of the Jacobian action
 _, jacT = jax.vjp( objective, input_dict, has_aux=False )
 jacT = jax.jit(jacT)
@@ -69,17 +82,23 @@ print(f"Evaluating objective: {walltime0:.3} seconds")
 print(f"Evaluating Jacobian: {walltime1:.3} seconds")
 print(f"Evaluating Jacobian transpose: {walltime2:.3} seconds")
 
+############################
+# Compute a preconditioner
+############################
+#M1 = precond.diagonal_preconditioner_fourier( input_dict, jac, k=8, batch=16 )
+#M1 = precond.diagonal_preconditioner_spatial(input_dict, param_dict, jac, k=16, batch=16)
+
+
 
 ######################################
 # Newton-GMRES starts here
 ######################################
 
 maxit = 1024
-inner = 256
-outer = 1
-damp  = 0.25
-#s_min = 1e-2
+inner = 16
+outer = 3
  
+
 for i in range(maxit):
     #Evaluate the objective function
     start = time.time()
@@ -90,6 +109,7 @@ for i in range(maxit):
     #f and input_dict are dictionaries. Flatten them into vectors for linear algebra
     f_vec, unravel_fn_left  = jax.flatten_util.ravel_pytree(f)
     _,     unravel_fn_right = jax.flatten_util.ravel_pytree(input_dict)
+
 
     #Compute the magnitude of the state vector
     s_vec, _ = jax.flatten_util.ravel_pytree( {"fields": input_dict['fields']} )
@@ -105,8 +125,7 @@ for i in range(maxit):
 
     #Do GMRES
     start = time.time()
-    step = adjoint_GMRES( lin_op, lin_op_T, f_vec, f_vec.size, f_vec.size+2, inner)
-    #step = gmres( lin_op, f_vec, inner, f_vec, s_min, preconditioner_list=[], output_index=i )
+    step = adjoint_GMRES( lin_op, lin_op_T, f_vec, f_vec.size, f_vec.size+2, inner, outer=outer, preconditioner_list=[])
     stop = time.time()
     gmres_walltime = stop - start
 
