@@ -177,7 +177,7 @@ def block_gmres(A, b, m, B, tol=1e-8, iteration=0):
 
 
 
-def adjoint_GMRES( A, A_t, b, m, n, inner):
+def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, preconditioner_list=[]):
     '''
     PURPOSE:
     Minimize the 2 norm of Ax-b where x is constrained to the subspace span( A^T b, (A^T A) A^T b, ..., (A^T A)^n A^T b )
@@ -187,70 +187,117 @@ def adjoint_GMRES( A, A_t, b, m, n, inner):
     INPUT:
     A - linear operator
     A_t - adjoint (transpose) linear operator
-    b - right hand side (solve Ax=b)
-    m,n - Assume A is an m-by-n matrix. These are just matrix dimensions
+    b - right hand side
+    m,n - A is a m-by-n matrix
     inner - how many inner iterations to do. an inner iteration consists of both an evaluation of A and A_t.
-
+    outer - if memory cannot support good residuals by inner iteration, we have no choice but to restart.
+    preconditioner_list=[M1,M2,...] a list of function handles to precondition with.
+    
     OUTPUT:
     x - the approximate solution to Ax=b
     '''
 
+    #The three matrices we construct every inner iteration
     B = jnp.zeros((inner+1, inner))
     U = jnp.zeros((m, inner+1))
     V = jnp.zeros((n, inner))
 
-    #Generate our orthonormal basis vectors with b
-    U = U.at[:,0].set( b / jnp.linalg.norm(b) )
+    #The approximate solution to Ax=b
+    x = jnp.zeros((n,))
 
-    #Power iteration
-    for i in range(inner):
-        #Apply (MA)^T
-        Au = A_t(U[:,i])
+    #Apply preconditioners to b
+    for M in preconditioner_list:
+        b = M(b, "no_trans")
 
-        #Orthogonalize with respect to previous V
-        for j in range(i):
-            B = B.at[i,j].set(jnp.dot( V[:,j], Au ))
-            Au = Au - B[i,j]*V[:,j]
+    #Compute the current remaining right hand side
+    #Call this c to distinguish from b and update it every outer iteration.
+    c = jnp.copy(b)
         
-        #Reorthogonalize to ensure numerical stability
-        for _ in range(2):
+    #Compute the norm of b so we can print the relative residual each outer iteration
+    norm_b = jnp.linalg.norm(b)
+
+    #print out the rel res each outer iteration
+    verbose = True
+
+    for outer_iteration in range(outer):
+        #Store the norm so we can solve Ax=\hat{c}.
+        #This should maintain numerical stability as norm(c) -> 0
+        c_norm = jnp.linalg.norm(c)
+
+        #Generate our orthonormal basis vectors with c
+        U = U.at[:,0].set( c / c_norm )
+
+        #Start power iteration
+        for i in range(inner):
+
+            #Apply (MA)^T
+            Au = U[:,i]
+            for M in preconditioner_list:
+                Au = M(Au, "trans")
+            Au = A_t(Au)
+
+            #Orthogonalize with respect to previous V
             for j in range(i):
-                Bij = jnp.dot( V[:,j], Au )
-                Au = Au - Bij*V[:,j]
+                B = B.at[i,j].set(jnp.dot( V[:,j], Au ))
+                Au = Au - B[i,j]*V[:,j]
             
-        #Define new vector of V
-        B = B.at[i,i].set(jnp.linalg.norm(Au))
-        V = V.at[:,i].set( Au / B[i,i] )
+            #Reorthogonalize to ensure numerical stability
+            for _ in range(2):
+                for j in range(i):
+                    Bij = jnp.dot( V[:,j], Au )
+                    Au = Au - Bij*V[:,j]
+                
+            #Define new vector of V
+            B = B.at[i,i].set(jnp.linalg.norm(Au))
+            V = V.at[:,i].set( Au / B[i,i] )
 
-        #Apply MA
-        Av = A(V[:,i])
-        
-        #Orthogonalize    
-        for j in range(i+1):
-            B  = B.at[j,i].set(jnp.dot( U[:,j], Av ))
-            Av = Av - B[j,i]*U[:,j]
-    
-        #Reorthogonalize to ensure numerical stability
-        for _ in range(2):
+            #Apply MA
+            Av = A(V[:,i])
+            for M in preconditioner_list:
+                Av = M(Av, "notrans")
+
+            #Orthogonalize    
             for j in range(i+1):
-                Bji  = jnp.dot( U[:,j], Av )
-                Av = Av - Bji*U[:,j]
+                B  = B.at[j,i].set(jnp.dot( U[:,j], Av ))
+                Av = Av - B[j,i]*U[:,j]
+        
+            #Reorthogonalize to ensure numerical stability
+            for _ in range(2):
+                for j in range(i+1):
+                    Bji  = jnp.dot( U[:,j], Av )
+                    Av = Av - Bji*U[:,j]
+
+            B = B.at[i+1,i].set(jnp.linalg.norm(Av))
+            U = U.at[:,i+1].set(Av / B[i+1,i])
+
+        #Project c into the basis U
+        #Since we used c to generate U, it is just e1
+        e1 = jnp.zeros(inner+1)
+        e1 = e1.at[0].set(1)
 
 
-        B = B.at[i+1,i].set(jnp.linalg.norm(Av))
-        U = U.at[:,i+1].set(Av / B[i+1,i])
+        #Solve least squares problem
+        #TODO, just do Given's rotations on the three diagonals in a smart way.
+        y, _, _, _ = jnp.linalg.lstsq(B, e1, rcond=None)
+        
+        # (1) Lift y into the full space (multiply by V) 
+        # (2) Rescale by c_norm since we solved for e1
+        dx = V @ (y*c_norm)
 
-    #You have constructed an orthonormal basis
-    b2 = jnp.zeros(inner+1)
-    b2 = b2.at[0].set(jnp.linalg.norm(b))
+        #Add this to our guess of x
+        x = x + dx
 
-    #Solve least squares problem
-    x2, _, _, _ = jnp.linalg.lstsq(B, b2, rcond=None)
+        #Update c. Do a matrix evaluation. Eh, it's cheap enough.
+        Ax = A(x)
+        for M in preconditioner_list:
+                Ax = M(Ax, "notrans")
+        c = b - Ax
+
+        if verbose:
+            rel_res = jnp.linalg.norm(c) / norm_b
+            print(f"outer iteration {outer_iteration}: relative residual = {rel_res:.6e}")
     
-    #Rotate to full space
-    x = V @ x2
-
-    savemat("debug_adjoint_GMRES.mat", {"U": U, "V": V, "b": b2, "B": B})
+        #savemat("debug_adjoint_GMRES.mat", {"U": U, "V": V, "B": B})
 
     return x
 

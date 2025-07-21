@@ -23,23 +23,8 @@ for i = 1:size(fs,1)
 end
 
 %%
-idx = [133, 156];
-idx = [237, 261];
-idx = [36, 79];
+idx = [276, 290];
 
-idx = [128, 137];
-idx = [207, 217];
-idx = [262, 272];
-idx = [70, 81];
-
-idx = [121, 138];
-idx = [394, 403];
-idx = [385, 394];
-
-%idx = [201, 211]
-%idx = [367, 382];
-  
-idx = [157, 171];
 
 dt = 1/256;
 ministeps = 64;
@@ -60,7 +45,7 @@ k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 18; %30
+frames = 34; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i

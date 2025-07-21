@@ -1,7 +1,9 @@
 import jax.flatten_util
 import jax.numpy as jnp
 import jax 
+import time
 
+from scipy.io import savemat
 import lib.mhd_jax as mhd_jax
 
 
@@ -215,3 +217,143 @@ def linear_dynamics_preconditioner( input_dict, param_dict, ravel_fn ):
         return jax.flatten_util.ravel_pytree(output_dict)[0]
 
     return lambda z: invert_linear_system(z)
+
+
+
+
+
+def diagonal_preconditioner_spatial(input_dict, param_dict, jac, k=8, batch=4):
+    print("\nEstimating diagonal of Jacobian...")
+
+    #Size of our random vectors 
+    n = input_dict['fields'].size
+    diag = jnp.zeros([n,])
+
+    def random_vector(key, size):
+        # Generates a vector with random ±1 values
+        return (2 * jax.random.bernoulli(key, 0.5, shape=size).astype(jnp.float64) - 1.0)
+    
+    #Define the linear operator of interest
+    _, unravel_fn_right = jax.flatten_util.ravel_pytree(input_dict)
+    lin_op = lambda v:  jax.flatten_util.ravel_pytree(  jac( input_dict, unravel_fn_right(v))  )[0]
+
+    #Why wait for each matrix-vector product individually?
+    lin_op_batched = jax.jit(jax.vmap(lin_op))
+
+    #Use k random vectors to estimate diagonal
+    key = jax.random.PRNGKey(seed=0)
+
+    for i in range(k):
+        #Split the key
+        key, subkey = jax.random.split(key)
+        z = random_vector(subkey, (batch, n) )
+
+        #The matrix is n-by(n+2), so pad with a zero on both ends.
+        z_pad = jnp.pad( z, ((0,0),(1,1)), mode='constant' )
+
+        print(z_pad.shape)
+
+        #Apply the Jacobian and take the product
+        start = time.time()
+        diag += jnp.sum( z * lin_op_batched(z_pad), axis=0 )
+        stop = time.time()
+        
+        print(f"{i}: walltime of {stop-start} seconds.")
+
+    diag = diag/k/batch
+    
+    #Save for investigation
+    savemat("spatial_diag.mat",{"diag": jnp.reshape(diag, input_dict['fields'].shape)})    
+
+    def M(v, mode):
+        '''
+        INPUT:
+        v - a vector
+        mode - "trans" or "no_trans"
+
+        OUTPUT:
+        Mv - the matrix-vector product. Since M is self adjoint here, mode is ignored.
+        '''
+
+        #Multiply. Both fields have been pre-dealiased
+        Mv =  v/ diag
+
+        #Dealias again after pointwise multiplication
+        #Mv = jnp.fft.rfft2(Mv)
+        #Mv = param_dict['mask'] * Mv
+        #Mv = jnp.fft.irfft2(Mv)
+        return Mv
+    return M
+
+
+
+
+def diagonal_preconditioner_fourier( input_dict, jac, k=8, batch=4 ):
+    '''
+    Estimate the diagonal of a linear operator in the Fourier representation.
+    '''
+
+    print("\nEstimating diagonal of Jacobian...")
+
+    #Size of our random vectors 
+    n = input_dict['fields'].size
+    diag = 0
+
+    def random_vector(key, shape):
+        # Generate a real-valued i.i.d. Gaussian field
+        real_field = jax.random.normal(key, shape)
+        # Return its Fourier transform (Hermitian-symmetric)
+        fourier = jnp.fft.rfft2( real_field )
+        # Just the phases, unit amplitude
+        fourier = fourier / jnp.abs(fourier)
+        return fourier
+    
+    #Define the linear operator of interest
+    _, unravel_fn_right = jax.flatten_util.ravel_pytree(input_dict)
+    lin_op = lambda v:  jax.flatten_util.ravel_pytree(  jac( input_dict, unravel_fn_right(v))  )[0]
+
+    #Why wait for each matrix-vector product individually?
+    lin_op_batched = jax.jit(jax.vmap(lin_op))
+
+    #Use k random vectors to estimate diagonal
+    key = jax.random.PRNGKey(seed=0)
+    for i in range(k):
+        #Split the key
+        key, subkey = jax.random.split(key)
+
+        #Generate random vectors in Fourier space
+        z = random_vector(subkey, (batch,) + input_dict['fields'].shape )
+
+        #Transform them to real space
+        z_real = jnp.fft.irfft2(z)
+        z_real = jnp.reshape( z_real, [batch, n] )
+        
+        #The matrix is acutally n-by(n+2), so pad with zeros on both ends.
+        z_pad = jnp.pad( z_real, ((0,0),(1,1)), mode='constant' )
+
+        #Apply the Jacobian and take the product
+        start = time.time()
+        Jz = lin_op_batched(z_pad)
+        Jz = jnp.reshape( Jz, (batch,) + input_dict['fields'].shape )
+        Jz = jnp.fft.rfft2(Jz)
+        diag += jnp.sum( jnp.conj(z) * Jz, axis=[0] )
+        stop = time.time()
+        
+        print(f"{i}: walltime of {stop-start} seconds.")
+
+    #Divide by the number of vectors we sampled
+    diag = diag/k/batch
+
+    #Transform to real space
+    diag = jnp.fft.irfft2(diag)
+
+    savemat("fourier_diag.mat",{"diag": jnp.reshape(diag, input_dict['fields'].shape) })
+    
+    #Prevent division by zero
+    #diag = 1 + jnp.abs(diag)
+        
+    def M(v, mode):
+        #Diagonal matrices are self-adjoint.
+        #mode (which will be "trans" or "no_trans") is purposefully ignored
+        return v/diag
+    return M
