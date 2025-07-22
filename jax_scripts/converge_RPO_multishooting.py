@@ -23,13 +23,13 @@ if (precision == jnp.float64):
 
 #Read in a state
 #input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE3.npz")
 
 #Check if this is a multishooting state
 if "segments" in param_dict:
     print("Loaded multishooting state.")
 else:
-    segments = 8
+    segments = 2
     print(f"Loaded single shooting state. Creating a multishooting state with {segments} segments...")
 
     #Read grid resolution n 
@@ -66,6 +66,9 @@ else:
 
     #Update the state dictionary to contain a set of multishooting points
     input_dict['fields'] = f
+
+
+
 
 #How many checkpoints do we want to keep memory down?
 param_dict.update({"checkpoints": 8})

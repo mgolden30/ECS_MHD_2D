@@ -15,22 +15,11 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_648.npz")
-#Kolmogorov Re=60
-input_dict, param_dict = dictionaryIO.load_dicts("newton/812.npz")
-
 # By = 1.0, Re = 100
 input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_760.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/15.npz")
-
-
-for key, value in input_dict.items():
-    print(f"Key: {key}, Value: not printing")
-
-for key, value in param_dict.items():
-    print(f"Key: {key}, Value: not printing")
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
 
 f = input_dict['fields']
 T = input_dict['T']
@@ -39,17 +28,45 @@ sx= input_dict['sx']
 steps = param_dict['steps']
 dt = T/steps
 
-ministeps = 32
-macrosteps = steps // ministeps
-
-print(macrosteps)
 
 evolve = jax.jit( lambda f: mhd_jax.eark4(f, dt, ministeps, param_dict) )
 
-savemat(f"traj/0.mat", {"f":f, "sx": sx})
-for t in range( macrosteps ):
-    print(t)
-    f = jnp.fft.rfft2(f)
-    f = evolve(f)
-    f = jnp.fft.irfft2(f)
-    savemat(f"traj/{t}.mat", {"f":f, "sx": sx})
+
+if f.ndim == 4:
+    mode = "multi_shooting"
+else:
+    mode = "single_shooting"
+
+#ministeps = integration steps to take between frames
+ministeps = 8
+macrosteps = steps // ministeps
+print(f"Saving {macrosteps} = {steps}//{ministeps} frames...")
+
+if mode == "single_shooting":
+    savemat(f"traj/0.mat", {"f":f, "sx": sx})
+    for t in range( macrosteps ):
+        print(t)
+        f = jnp.fft.rfft2(f)
+        f = evolve(f)
+        f = jnp.fft.irfft2(f)
+        savemat(f"traj/{t}.mat", {"f":f, "sx": sx})
+
+if mode == "multi_shooting":
+    print(f"param_dict['ministeps'] = {param_dict['ministeps']}")
+    print(f"param_dict['ministeps']/ministeps = {param_dict['ministeps']/ministeps}")
+    
+    #Assume they divide nicely
+    assert( param_dict['ministeps'] % ministeps == 0 )
+
+    restart = param_dict['ministeps'] // ministeps
+
+    #Loop over this
+    for i in range(macrosteps):
+        print(i)
+        if i % restart == 0:
+            print("Switching to new initial condition...")
+            g = f[i//restart, ...]
+        savemat(f"traj/{i}.mat", {"f":g, "sx": sx})
+        g = jnp.fft.rfft2(g)
+        g = evolve(g)
+        g = jnp.fft.irfft2(g)

@@ -1,6 +1,6 @@
 clear;
 
-load("../dist2.mat");
+load("../dist.mat");
 
 clf;
 
@@ -45,7 +45,7 @@ k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 34; %30
+frames = 136;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i
@@ -53,11 +53,19 @@ for i = 1:frames
   fs(:,:,:,i) = data.f;
 end
 
+%Construct some 2D observables to plot
+w_sq = squeeze(mean( fs(1,:,:,:).^2, [2,3] )); %mean w^2
+j_sq = squeeze(mean( fs(2,:,:,:).^2, [2,3] )); %mean j^2
+
+%append the inital values to close the loop
+w_sq(end+1) = w_sq(1);
+j_sq(end+1) = j_sq(1);
+
 
 %%
 figure(1);
 while(true)
-for i = 1:frames
+for i = 1:2:frames
   i
   %data = load("../traj/" + i + ".mat");
 
@@ -68,10 +76,21 @@ for i = 1:frames
   f = real(ifft(f, [], 2));
 
   clf;
-  tiledlayout(1,2);
+  tiledlayout(1,3);
   vis(f);
 
   colormap bluewhitered
+
+  nexttile
+  plot( w_sq, j_sq, "Color", "black" );
+  xlabel("$\langle \omega^2 \rangle$", "Interpreter", "latex" , "fontsize", 32  );
+  ylabel("$\langle j^2 \rangle$", "Interpreter", "latex", "fontsize", 32 ,"rotation", 0);
+  
+  hold on
+    scatter( w_sq(i), j_sq(i), 'o', 'filled', 'MarkerFaceColor', 'red' );
+  hold off
+
+  axis square;
 
   drawnow;
 

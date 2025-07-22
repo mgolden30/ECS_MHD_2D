@@ -26,14 +26,13 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_680.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_680.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
 input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_112.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/17.npz")
-
+input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_1264.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/0.npz")
 
 mode = "multi_shooting"
 
@@ -95,8 +94,8 @@ print(f"Evaluating Jacobian transpose: {walltime2:.3} seconds")
 ######################################
 
 maxit = 1024
-inner = 16
-outer = 3
+inner = 128
+outer = 1
  
 
 for i in range(maxit):
@@ -107,8 +106,8 @@ for i in range(maxit):
     f_walltime = stop - start
 
     #f and input_dict are dictionaries. Flatten them into vectors for linear algebra
-    f_vec, unravel_fn_left  = jax.flatten_util.ravel_pytree(f)
-    _,     unravel_fn_right = jax.flatten_util.ravel_pytree(input_dict)
+    f_vec,     unravel_fn_left  = jax.flatten_util.ravel_pytree(f)
+    input_vec, unravel_fn_right = jax.flatten_util.ravel_pytree(input_dict)
 
 
     #Compute the magnitude of the state vector
@@ -125,7 +124,7 @@ for i in range(maxit):
 
     #Do GMRES
     start = time.time()
-    step = adjoint_GMRES( lin_op, lin_op_T, f_vec, f_vec.size, f_vec.size+2, inner, outer=outer, preconditioner_list=[])
+    step = adjoint_GMRES( lin_op, lin_op_T, f_vec, f_vec.size, input_vec.size, inner, outer=outer, preconditioner_list=[])
     stop = time.time()
     gmres_walltime = stop - start
 
