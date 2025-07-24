@@ -15,7 +15,7 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE.npz") #_multi.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz") #_multi.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
 
 f = input_dict['fields']
@@ -47,7 +47,7 @@ jac =  lambda tangent: jax.jvp( forward, (f,), (tangent,))[1]
 jac = jax.jit(jax.vmap(jac))
 
 #How many tangent vectors do we want to iterate?
-block_size = 16
+block_size = 32
 n = f.shape[-1]
 key = jax.random.PRNGKey(seed=0)
 tang = jax.random.normal( key, [block_size, 2, n, n], dtype=precision )
@@ -57,7 +57,7 @@ data = loadmat("floquet.mat")
 tang = data["tang"]
 
 #How many times should we do power iteration?
-maxit = 2048
+maxit = 16
 for i in range(maxit):
     print(tang.shape)
 
@@ -78,4 +78,4 @@ jt = jnp.reshape( jac(tang), [block_size, -1] )
 
 R = t @ jt.transpose()
 
-savemat("floquet.mat", {"R": R, "tang": tang})
+savemat("floquet.mat", {"R": R, "tang": tang, "diff": f_out - f })
