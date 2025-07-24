@@ -84,8 +84,14 @@ def objective_RPO_multishooting( input_dict, param_dict ):
     #compute the mismatch
     diff = jnp.fft.irfft2(f0 - jnp.roll(f, shift=1, axis=0))
 
+    #Compute mismatch in velocity as well
+    v  = mhd_jax.state_vel( f, param_dict, include_dissipation=True )
+    v0 = mhd_jax.state_vel( f0, param_dict, include_dissipation=True ) 
+    diff_vel = jnp.fft.irfft2( v0 - jnp.roll(v, shift=1, axis=0) )
+
     #Return a dictionary
-    output_dict = {'fields': diff}
+    output_dict = {'fields': diff, 'vel': diff_vel}
+    #output_dict = {'fields': diff }
 
     return output_dict
 

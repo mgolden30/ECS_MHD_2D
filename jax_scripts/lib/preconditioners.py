@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import jax 
 import time
 
-from scipy.io import savemat
+from scipy.io import savemat, loadmat
 import lib.mhd_jax as mhd_jax
 
 
@@ -357,3 +357,59 @@ def diagonal_preconditioner_fourier( input_dict, jac, k=8, batch=4 ):
         #mode (which will be "trans" or "no_trans") is purposefully ignored
         return v/diag
     return M
+
+
+
+
+def floquet_preconditioner( filename, epsilon ):
+    '''
+    Precondition with the leading Floquet spectrum. This is only sensible if you are close 
+    to a solution in the first place.
+    '''
+
+    data = loadmat(filename)
+    
+    #Read in the leading Schur vectors
+    Q = data['tang']
+    Q = jnp.reshape(Q, [Q.shape[0], -1] )
+
+    print(Q.shape)
+
+    #Read in the approximate Schur form of the matrix.
+    #This is only close to upper triangular. Be prepared for it to be dense.
+    R = data['R']
+
+    #Subtract the identity from R
+    R2 = R - jnp.identity(R.shape[0])
+    
+    #Compute the psuedo-inverse with some tolerance
+    #R2_inv = jnp.linalg.pinv( R2, rtol=1e-6 )
+
+    U, S, Vh = jnp.linalg.svd(R2, full_matrices=False)
+    S_inv = 1.0 / (S + epsilon)
+    R2_inv = Vh.T @ (S_inv[:, None] * U.T)
+
+
+    def M(v, mode):
+        #project the vector into the approximate Schur vectors
+        u = Q @ v
+            
+        #Determine the leftover, perpindicular part of v to our Schur vectors
+        v_perp = v - Q.transpose() @ u
+
+        #What we do with u depends on the evaluation mode
+        match mode:
+            case "no_trans":
+                #Multiply by our pseudoinverse of R-I
+                u = R2_inv @ u
+            case "trans":
+                #Multiply by transpose of our pseudoinverse of R-I
+                 u = R2_inv.transpose() @ u
+            case _:
+                print(f"Oh no. You passed mode = {mode} to the preconditioner. This is not a valid option...")
+                return None #just crash out everything
+        #Recombine with v_perp and return
+        Mv = v_perp + Q.transpose() @ u 
+        return Mv
+    return M
+

@@ -205,16 +205,17 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, preconditioner_list=[]):
     #The approximate solution to Ax=b
     x = jnp.zeros((n,))
 
-    #Apply preconditioners to b
-    for M in preconditioner_list:
-        b = M(b, "no_trans")
-
     #Compute the current remaining right hand side
     #Call this c to distinguish from b and update it every outer iteration.
     c = jnp.copy(b)
-        
-    #Compute the norm of b so we can print the relative residual each outer iteration
-    norm_b = jnp.linalg.norm(b)
+ 
+    #Apply preconditioners to c
+    for M in preconditioner_list:
+        c = M(c, "no_trans")
+
+    #Compute the norm of c initially so we can print the relative residual each outer iteration
+    c0 = jnp.copy(c)
+    norm_c0 = jnp.linalg.norm(c0)
 
     #print out the rel res each outer iteration
     verbose = True
@@ -222,10 +223,10 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, preconditioner_list=[]):
     for outer_iteration in range(outer):
         #Store the norm so we can solve Ax=\hat{c}.
         #This should maintain numerical stability as norm(c) -> 0
-        c_norm = jnp.linalg.norm(c)
+        norm_c = jnp.linalg.norm(c)
 
         #Generate our orthonormal basis vectors with c
-        U = U.at[:,0].set( c / c_norm )
+        U = U.at[:,0].set( c / norm_c )
 
         #Start power iteration
         for i in range(inner):
@@ -254,7 +255,7 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, preconditioner_list=[]):
             #Apply MA
             Av = A(V[:,i])
             for M in preconditioner_list:
-                Av = M(Av, "notrans")
+                Av = M(Av, "no_trans")
 
             #Orthogonalize    
             for j in range(i+1):
@@ -282,7 +283,7 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, preconditioner_list=[]):
         
         # (1) Lift y into the full space (multiply by V) 
         # (2) Rescale by c_norm since we solved for e1
-        dx = V @ (y*c_norm)
+        dx = V @ (y*norm_c)
 
         #Add this to our guess of x
         x = x + dx
@@ -290,11 +291,11 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, preconditioner_list=[]):
         #Update c. Do a matrix evaluation. Eh, it's cheap enough.
         Ax = A(x)
         for M in preconditioner_list:
-                Ax = M(Ax, "notrans")
-        c = b - Ax
+                Ax = M(Ax, "no_trans")
+        c = c0 - Ax
 
         if verbose:
-            rel_res = jnp.linalg.norm(c) / norm_b
+            rel_res = jnp.linalg.norm(c) / norm_c0
             print(f"outer iteration {outer_iteration}: relative residual = {rel_res:.6e}")
     
         #savemat("debug_adjoint_GMRES.mat", {"U": U, "V": V, "B": B})

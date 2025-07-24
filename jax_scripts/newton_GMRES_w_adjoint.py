@@ -29,12 +29,13 @@ if (precision == jnp.float64):
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_680.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_1264.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/0.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_1264.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("test.npz")
 
-mode = "multi_shooting"
+#mode = "multi_shooting"
+mode = "single_shooting"
 
 if mode == "single_shooting":
     #define number of segements for memory checkpointing
@@ -86,7 +87,7 @@ print(f"Evaluating Jacobian transpose: {walltime2:.3} seconds")
 ############################
 #M1 = precond.diagonal_preconditioner_fourier( input_dict, jac, k=8, batch=16 )
 #M1 = precond.diagonal_preconditioner_spatial(input_dict, param_dict, jac, k=16, batch=16)
-
+M1 = precond.floquet_preconditioner( "floquet.mat", epsilon=0.25 )
 
 
 ######################################
@@ -94,7 +95,7 @@ print(f"Evaluating Jacobian transpose: {walltime2:.3} seconds")
 ######################################
 
 maxit = 1024
-inner = 128
+inner = 64*4
 outer = 1
  
 
@@ -124,7 +125,7 @@ for i in range(maxit):
 
     #Do GMRES
     start = time.time()
-    step = adjoint_GMRES( lin_op, lin_op_T, f_vec, f_vec.size, input_vec.size, inner, outer=outer, preconditioner_list=[])
+    step = adjoint_GMRES( lin_op, lin_op_T, f_vec, f_vec.size, input_vec.size, inner, outer=outer, preconditioner_list=[M1,])
     stop = time.time()
     gmres_walltime = stop - start
 
@@ -132,6 +133,7 @@ for i in range(maxit):
     
     #update the input_dict
     x, unravel_fn = jax.flatten_util.ravel_pytree( input_dict )
+    
     
     #Do a line search
     damp = 1.0
@@ -147,6 +149,10 @@ for i in range(maxit):
             break
         damp = damp/2
     input_dict = unravel_fn(x)
+
+    #x = x - 0.01*step
+    #input_dict = unravel_fn(x)
+
 
     #Dealias after every Newton step
     fields = input_dict['fields']
