@@ -45,9 +45,8 @@ param_dict.update( {'dt': dt, 'ministeps': ministeps} )
 
 # Initial data
 f = jnp.zeros([2, n, n], dtype=precision)
-f = f.at[0, :, :].set( jnp.cos(x-0.1)*jnp.sin(x+y-1.2) - jnp.sin(3*x-1)*jnp.cos(y-1) + 2*jnp.cos(2*x-1))
-#f = f.at[1, :, :].set( jnp.cos(x+2.1)*jnp.sin(y+3.5) - jnp.cos(1-x) + jnp.sin(x + 5*y - 1 ) )
-
+f = f.at[0, :, :].set( jnp.cos(4*x-0.1)*jnp.sin(x+y-1.2) - jnp.sin(3*x-1)*jnp.cos(y-1) + 2*jnp.cos(2*x-1))
+f = f.at[1, :, :].set( jnp.cos(3*x+2.1)*jnp.sin(y+3.5) - jnp.cos(1-x) + jnp.sin(x + 5*y - 1 ) )
 
 
 #key = jax.random.PRNGKey(seed=0)

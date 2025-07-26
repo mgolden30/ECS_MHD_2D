@@ -96,6 +96,33 @@ def objective_RPO_multishooting( input_dict, param_dict ):
     return output_dict
 
 
+def add_orthogonal_contraints( objective_fn, param_dict, Q ):
+    '''
+    Return a new function that adds appends orthogonality constraints.
+    '''
+    def new_objective_fn( input_dict, param_dict ):
+        #Evaluate the original function 
+        output_dict = objective_fn(input_dict, param_dict)
+        
+        #Assume vectors is of size [m, n], where m is the number of vectors and 
+        #n is the dimension of the input_dict
+        u = jax.flatten_util.ravel_pytree( input_fields['fields'] )[0]
+
+        #The dot product of our Q vectors with the field u
+        c = Q @ u
+
+        #This is some jax magic to set c to zero, but evaluate the Jacobian as Q @ du
+        c = c - jax.lax.stop_gradient(c)
+
+        #Append these phase constraints to your obejctive
+        output_dict.update({"ortho": c})
+        return output_dict
+    return new_objective_fn
+
+
+
+
+
 def objective_RPO( input_dict, param_dict ):
     '''
     PURPOSE:

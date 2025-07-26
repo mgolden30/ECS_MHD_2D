@@ -1,6 +1,6 @@
 clear;
 
-load("../dist.mat");
+load("../dist2.mat");
 
 clf;
 
@@ -23,7 +23,7 @@ for i = 1:size(fs,1)
 end
 
 %%
-idx = [276, 290];
+idx = [349, 365];
 
 
 dt = 1/256;
@@ -45,7 +45,7 @@ k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 136;%64; %30
+frames = 128;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i

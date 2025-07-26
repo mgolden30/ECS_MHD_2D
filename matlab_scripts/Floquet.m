@@ -49,6 +49,7 @@ proj = tang * diff(:)/norm(diff(:));
 proj = abs(proj);
 plot(proj);
 title("Error projection onto Schur vectors")
+return;
 
 %% Visualize a Schur vector
 
