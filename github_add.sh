@@ -12,4 +12,7 @@ git add jax_scripts/lib/*.py
 #Whatever Floquet thing I am studying
 git add floquet.mat
 
+#Add all solutions
+git add solutions/Re100/*
+
 git add github_add.sh 

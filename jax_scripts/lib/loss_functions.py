@@ -106,7 +106,7 @@ def add_orthogonal_contraints( objective_fn, param_dict, Q ):
         
         #Assume vectors is of size [m, n], where m is the number of vectors and 
         #n is the dimension of the input_dict
-        u = jax.flatten_util.ravel_pytree( input_fields['fields'] )[0]
+        u = jax.flatten_util.ravel_pytree( input_dict['fields'] )[0]
 
         #The dot product of our Q vectors with the field u
         c = Q @ u

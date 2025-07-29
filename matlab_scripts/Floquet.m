@@ -16,7 +16,6 @@ clim([-1,1] * max(abs(R(:))));
 colorbar();
 colormap bluewhitered;
 
-
 nexttile
 
 %First, draw a unit circle
