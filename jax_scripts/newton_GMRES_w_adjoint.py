@@ -15,7 +15,7 @@ from lib.linalg import adjoint_GMRES
 import lib.dictionaryIO as dictionaryIO
 import lib.preconditioners as precond
 
-from scipy.io import savemat
+from scipy.io import savemat, loadmat
 
 ###############################
 # Construct numerical grid
@@ -29,8 +29,8 @@ if (precision == jnp.float64):
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_680.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("newton/5.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE5.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/4.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_80.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("test.npz")
 
@@ -43,12 +43,41 @@ if mode == "single_shooting":
     param_dict.update(  {"ministeps": int(param_dict["steps"]//num_checkpoints), "num_checkpoints": int(num_checkpoints)})
 
     #Define the RPO objective function
-    objective = jax.jit( lambda input_dict: loss_functions.objective_RPO_with_checkpoints(input_dict, param_dict) )
+    obj = loss_functions.objective_RPO_with_checkpoints
 
 if mode == "multi_shooting":
     #Define the RPO objective function
-    objective = jax.jit( lambda input_dict: loss_functions.objective_RPO_multishooting(input_dict, param_dict) )
+    obj = loss_functions.objective_RPO_multishooting
 
+
+#Use Floquet analysis to modift the objective function with phase conditions.
+phase_conditions=True
+if phase_conditions:
+    data = loadmat("floquet.mat")
+    
+    #Compute eigenvalues and eigenvectors of R
+    eigenval, eigenvec = jnp.linalg.eig( data['R'] )
+
+    #Find the eigenvalues close to unity
+    cutoff = 0.1
+    marginal = jnp.abs( eigenval - 1) < cutoff
+
+    #Isolate the margingal eigenvalues
+    Q = eigenvec[:, marginal]
+    Q = jnp.real( (1 + 0.4j) * Q )
+
+    #Make tang a rectangular matrix
+    tang = jnp.reshape( data['tang'], [data['R'].shape[0], -1] )
+    Q = Q.transpose() @ tang
+    
+    #Update the loss function with orthogonality conditions
+    obj = loss_functions.add_orthogonal_contraints( obj, param_dict, Q )
+
+
+
+
+#Capture param_dict and JIT it
+objective = jax.jit( lambda input_dict: obj(input_dict, param_dict) )
 
 
 #Compile the objective function
@@ -90,12 +119,14 @@ print(f"Evaluating Jacobian transpose: {walltime2:.3} seconds")
 #M1 = precond.floquet_preconditioner( "floquet.mat", epsilon=1.0 )
 
 
+
+
 ######################################
 # Newton-GMRES starts here
 ######################################
 
 maxit = 1024
-inner = 64*2
+inner = 32
 outer = 1
 
 for i in range(maxit):

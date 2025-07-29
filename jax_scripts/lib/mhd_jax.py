@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 #Tell the user if they are using the GPU or not when they invoke this library.
-print(f"Jax is using {jax.devices()}\n")
+#print(f"Jax is using {jax.devices()}\n")
 
 
 def construct_domain(n: int, data_type):
