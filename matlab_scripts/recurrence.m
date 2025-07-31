@@ -12,6 +12,8 @@ set(gca, "ydir", "normal");
 colorbar();
 clim([0,1]);
 
+
+
 %%
 for i = 1:size(fs,1)
   clf;
@@ -24,8 +26,9 @@ end
 
 %%
 idx = [349, 365];
-
-
+idx = [195, 228];
+idx = [118, 132];
+idx = [58, 88];
 dt = 1/256;
 ministeps = 64;
 T = dt*ministeps*(idx(2) - idx(1))
@@ -45,7 +48,7 @@ k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 128;%64; %30
+frames = 120;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i

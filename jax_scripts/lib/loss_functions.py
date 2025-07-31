@@ -286,7 +286,7 @@ def loss_RPO_memory_efficient( input_dict, param_dict, segments ):
             v0= jnp.fft.irfft2(v0)
 
             #Compute the mean squared error
-            return jnp.mean( jnp.square( f - f0 )) #+ jnp.square( v - v0 ) )
+            return jnp.mean( jnp.square( f - f0 ) + jnp.square( v - v0 ) )
             #return jnp.mean( jnp.abs( f - f0 ) + jnp.abs( v - v0 ) )
 
 
