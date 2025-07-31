@@ -38,6 +38,72 @@ end
 %sum(b2.*c.^2)/2 
 %sum(b2.*(a*c))
 
+
+%% Quick convergence test to check that my methods are the desired orders
+
+aa = 0.2;
+bb = 0.2;
+cc = 5.7;
+v = @(x) [-x(2)-x(3); x(1) + aa*x(2); bb + x(3)*(x(1) - cc)];
+
+
+x0 = [1;2;3];
+
+
+t = 5;
+steps = [128, 256, 512, 1024];
+
+steps_fine = 4096;
+
+x_fine = runge_kutta(x0, t, steps_fine, a, b, v);
+
+
+err = [];
+err2= [];
+
+for i = 1:numel(steps)
+  x = runge_kutta(x0, t, steps(i), a, b, v);
+  err(i) = norm(x - x_fine);
+
+  x = runge_kutta(x0, t, steps(i), a, b2, v);
+  err2(i) = norm(x - x_fine);
+end
+
+scatter( steps, err );
+hold on
+scatter( steps, err2 );
+hold off
+
+set(gca, "xscale", "log");
+set(gca, "yscale", "log");
+
+p  = polyfit( log(steps), log(err), 1 );
+p2 = polyfit( log(steps), log(err2), 1 );
+
+fprintf("Estimated error of method #1 is" + p(1)  + "\n");
+fprintf("Estimated error of method #2 is" + p2(1) + "\n");
+
+
+function x = runge_kutta( x, t, steps, a, b, v )
+  h = t/steps;
+
+  s = size(a,1);
+  k = zeros(numel(x), s);
+
+  for i = 1:steps
+    k(:,1) = h*v(x);
+    for j = 2:s
+      k(:,j) = h*v(x + k * a(j,:).');
+    end
+    x = x + k*b;
+  end
+end
+
+
+
+
+
+
 function [a, b, b2] = unpack(x,s)
   b  = x(1:s);
   b2 = x(s + (1:s));
