@@ -29,9 +29,9 @@ if (precision == jnp.float64):
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_680.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE5.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/4.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_80.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re40/1.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("newton/9.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_64.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("test.npz")
 
 #mode = "multi_shooting"
@@ -51,7 +51,7 @@ if mode == "multi_shooting":
 
 
 #Use Floquet analysis to modift the objective function with phase conditions.
-phase_conditions=True
+phase_conditions=False
 if phase_conditions:
     data = loadmat("floquet.mat")
     
@@ -119,7 +119,27 @@ print(f"Evaluating Jacobian transpose: {walltime2:.3} seconds")
 #M1 = precond.floquet_preconditioner( "floquet.mat", epsilon=1.0 )
 
 
+#Get a function to turn vector->dict
+f_vec, ravel_fn = jax.flatten_util.ravel_pytree(f)
 
+@jax.jit
+def x0_fn(b, key):
+    '''
+    Function for generating the initial vector x0 of Krylov iteration. 
+    I would like to generate a random vector x0, but I want it to be dealiased correctly.
+    '''
+    x0 = jax.random.normal(key, shape=b.shape)
+    x0_dict = ravel_fn(x0)
+    f = x0_dict['fields']
+    f = jnp.fft.rfft2(f) * param_dict['mask']
+    f = jnp.fft.irfft2(f)
+    x0_dict['fields'] = f
+    x0, _ = jax.flatten_util.ravel_pytree(x0_dict)
+    return x0
+
+x0 = x0_fn(f_vec, jax.random.PRNGKey(seed=0))
+print(x0)
+#exit()
 
 ######################################
 # Newton-GMRES starts here
@@ -155,7 +175,7 @@ for i in range(maxit):
 
     #Do GMRES
     start = time.time()
-    step = adjoint_GMRES( lin_op, lin_op_T, f_vec, f_vec.size, input_vec.size, inner, outer=outer, preconditioner_list=[])
+    step = adjoint_GMRES( A=lin_op,  A_t=lin_op_T, b=f_vec, m=f_vec.size, n=input_vec.size, inner=inner, outer=outer, precond_left=[], x0_fn=lambda x,_: x, seed=0)
     stop = time.time()
     gmres_walltime = stop - start
 

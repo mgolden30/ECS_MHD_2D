@@ -177,63 +177,79 @@ def block_gmres(A, b, m, B, tol=1e-8, iteration=0):
 
 
 
-def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, preconditioner_list=[]):
-    '''
-    PURPOSE:
-    Minimize the 2 norm of Ax-b where x is constrained to the subspace span( A^T b, (A^T A) A^T b, ..., (A^T A)^n A^T b )
-    This differs from typical GMRES where A is assumed square. Here A can be non-square, but it requires the implementation
-    of the transpose.
+def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, precond_left=[], x0_fn=lambda x, _: x, seed=0):
+    """
+    Iteratively solve the linear system Ax=b
 
-    INPUT:
-    A - linear operator
-    A_t - adjoint (transpose) linear operator
-    b - right hand side
-    m,n - A is a m-by-n matrix
-    inner - how many inner iterations to do. an inner iteration consists of both an evaluation of A and A_t.
-    outer - if memory cannot support good residuals by inner iteration, we have no choice but to restart.
-    preconditioner_list=[M1,M2,...] a list of function handles to precondition with.
+    Parameters
+    ----------
+    A : callable
+        Evaluates the matrix-vector product (MVP) via A(x)
+    A_t: callable
+        Evaluates the vector-matrix product (VMP) via A_t(x)
+    b: ndarray
+        A 1-dimensional vector that is the right hand side of Ax=b
+    m: int
+        The number of rows of A
+    n: int
+        The number of columns of A
+    inner: int
+        The size of the Krylov subspace we use to approximate x
+    outer: int
+        How many times should we restart Krylov subspace construction?
+    precond_left: list of callable
+        List of matrix-free preconditioning operators. Each callable should accept:
+        - x (ndarray): The input vector
+        - mode (str): One of "no_trans" or "trans" indicating whether to apply the operator or its transpose.
+        Returns an ndarray representing the result of the MVP or VMP.
+    x0_fn: callable
+        Determines the initial vector of the Krylov subspace via x0_fn(b,key), where b is the current right hand side
+        at a given outer iteration and key = jax.random.PRNGKey(seed) is used for reproducible random number generation.
+        The default x0_fn wil just return b, which is a common choice for GMRES.
+    seed: int
+        Used to create a key = jax.random.PRNGKey(seed) for initializing the Krylov subspace if a random x0_fn is provided by the user.
+
+    Returns
+    -------
+    x: ndarray
+        The 1D array approximating the solution to Ax=b
+    """
     
-    OUTPUT:
-    x - the approximate solution to Ax=b
-    '''
-
     #The three matrices we construct every inner iteration
     B = jnp.zeros((inner+1, inner))
     U = jnp.zeros((m, inner+1))
     V = jnp.zeros((n, inner))
 
     #The approximate solution to Ax=b
+    #We will build the solution iteratively.
     x = jnp.zeros((n,))
 
-    #Compute the current remaining right hand side
-    #Call this c to distinguish from b and update it every outer iteration.
-    c = jnp.copy(b)
+    #Store b before we modify it so we can monitor the relative residual of Ax=b
+    b0 = jnp.copy(b)
  
-    #Apply preconditioners to c
-    for M in preconditioner_list:
-        c = M(c, "no_trans")
+    #Apply left preconditioners to b
+    for M in precond_left:
+        b = M(b, "no_trans")
 
-    #Compute the norm of c initially so we can print the relative residual each outer iteration
-    c0 = jnp.copy(c)
-    norm_c0 = jnp.linalg.norm(c0)
-
-    #print out the rel res each outer iteration
-    verbose = True
+    #Create the pseudorandom number key
+    key = jax.random.PRNGKey(seed)
 
     for outer_iteration in range(outer):
-        #Store the norm so we can solve Ax=\hat{c}.
-        #This should maintain numerical stability as norm(c) -> 0
-        norm_c = jnp.linalg.norm(c)
+        #Split the key so we get a new random vector each iteration
+        key, subkey = jax.random.split(key)
 
-        #Generate our orthonormal basis vectors with c
-        U = U.at[:,0].set( c / norm_c )
+        #Evaluate the x0_fn to get the initial vector of our Krylov subsapce
+        x0 = x0_fn(b, subkey)
+
+        #Generate our orthonormal basis vectors with x0
+        U = U.at[:,0].set( x0 / jnp.linalg.norm(x0) )
 
         #Start power iteration
         for i in range(inner):
 
-            #Apply (MA)^T
+            #Apply (Mn... M2 M1 A)^T = A^T M1^T M2^T ... Mn^T
             Au = U[:,i]
-            for M in preconditioner_list:
+            for M in reversed(precond_left):
                 Au = M(Au, "trans")
             Au = A_t(Au)
 
@@ -243,6 +259,7 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, preconditioner_list=[]):
                 Au = Au - B[i,j]*V[:,j]
             
             #Reorthogonalize to ensure numerical stability
+            #These dot products are not the computational bottleneck
             for _ in range(2):
                 for j in range(i):
                     Bij = jnp.dot( V[:,j], Au )
@@ -254,7 +271,7 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, preconditioner_list=[]):
 
             #Apply MA
             Av = A(V[:,i])
-            for M in preconditioner_list:
+            for M in precond_left:
                 Av = M(Av, "no_trans")
 
             #Orthogonalize    
@@ -271,34 +288,33 @@ def adjoint_GMRES( A, A_t, b, m, n, inner, outer=1, preconditioner_list=[]):
             B = B.at[i+1,i].set(jnp.linalg.norm(Av))
             U = U.at[:,i+1].set(Av / B[i+1,i])
 
-        #Project c into the basis U
-        #Since we used c to generate U, it is just e1
-        e1 = jnp.zeros(inner+1)
-        e1 = e1.at[0].set(1)
-
-
-        #Solve least squares problem
-        #TODO, just do Given's rotations on the three diagonals in a smart way.
-        y, _, _, _ = jnp.linalg.lstsq(B, e1, rcond=None)
+        #Our bidiagonalization is complete (for this iteration)
+        #Project the current right hand side b into U
+        b2 = U.transpose() @ b
         
-        # (1) Lift y into the full space (multiply by V) 
-        # (2) Rescale by c_norm since we solved for e1
-        dx = V @ (y*norm_c)
+        #Determine how much of b lives in U for informed Krylov choices
+        projection_b = jnp.linalg.norm(b2) / jnp.linalg.norm(b)
+  
+        #Solve least squares problem
+        #TODO, just do Given's rotations and JIT it
+        y, _, _, _ = jnp.linalg.lstsq(B, b2, rcond=None)
+        
+        #Lift y into the full space (multiply by V) 
+        dx = V @ y
 
         #Add this to our guess of x
         x = x + dx
 
-        #Update c. Do a matrix evaluation. Eh, it's cheap enough.
+        #Update b. Do a matrix evaluation. Eh, it's cheap enough.
         Ax = A(x)
-        for M in preconditioner_list:
+        for M in precond_left:
                 Ax = M(Ax, "no_trans")
-        c = c0 - Ax
+        b = b0 - Ax
 
-        if verbose:
-            rel_res = jnp.linalg.norm(c) / norm_c0
-            print(f"outer iteration {outer_iteration}: relative residual = {rel_res:.6e}")
+        rel_res = jnp.linalg.norm(b) / jnp.linalg.norm(b0)
+        print(f"outer iter {outer_iteration:03d}: relative residual = {rel_res:.6e}, |b2|/|b|={projection_b:.6e}")
     
-        #savemat("debug_adjoint_GMRES.mat", {"U": U, "V": V, "B": B})
+        savemat("debug_adjoint_GMRES.mat", {"U": U, "V": V, "B": B, "b": b})
 
     return x
 

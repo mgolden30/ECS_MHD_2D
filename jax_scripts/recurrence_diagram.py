@@ -13,16 +13,16 @@ import lib.dictionaryIO as dictionaryIO
 from scipy.io import savemat
 
 n  = 256
-dt = 1/256
-ministeps = 64
+dt = 1/128
+ministeps = 32
 precision = jnp.float64
 
-transient_steps = 512*4*8
-steps = 512
+transient_steps = 4*512*8
+steps = 256
 
-nu  = 1/100
-eta = 1/100
-b0  = [0.0, 1.0] # Mean magnetic field
+nu  = 1/40
+eta = 1/40
+b0  = [0.0, 0.1] # Mean magnetic field
 
 # If you want double precision, change JAX defaults
 if (precision == jnp.float64):
@@ -110,10 +110,10 @@ plt.close()
 start = time.time()
 dist = jnp.zeros([steps, steps])
 for i in range(steps):
-    diff = fs - fs[i,:,:,:]    
-    diff = jnp.fft.irfft2(diff)
+    #diff = fs - fs[i,:,:,:]    
+    #diff = jnp.fft.irfft2(diff)
 
-    #diff = jnp.abs(fs) - jnp.abs(fs[i,:,:,:])    
+    diff = jnp.abs(fs) - jnp.abs(fs[i,:,:,:])    
     diff = jnp.reshape( diff, [steps, -1] ) #shape [steps, 2*n*n]
 
     dist = dist.at[:,i].set( jnp.linalg.vector_norm(diff, axis=1) )
