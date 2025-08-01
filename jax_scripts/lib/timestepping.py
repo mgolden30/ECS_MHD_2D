@@ -1,4 +1,5 @@
 import jax
+import jax.flatten_util
 import jax.numpy as jnp
 
 
@@ -138,116 +139,6 @@ def runge_kutta_43( x, vel_fn, t, h=1e-2, atol=1e-4):
 
 
 
-def runge_kutta_43_safe( x, vel_fn, t, h=1e-2, atol=1e-4, max_steps=1024):
-    '''
-    Do explicit time integration with RK4(3). 
-    
-    Parameters
-    ----------
-    x : ndarray
-        Initial condition
-    vel_fn : callable
-        A function that responds to vel_fn(x) and returns the state velocity
-    t : float
-        Desired integration time
-    h : float (optional)
-        Initial guess of timestep.
-    atol: float (optional)
-        Absolution TOLerance (ATOL). Accept the step if norm(error) < atol.
-    max_steps: int (optional)
-        Only integrate this many steps before returning. This has two benefits.
-            1) Prevents the code from stalling as h->0
-            2) Allows reverse mode differentiation for things like adjoint looping.
-
-    Returns
-    -------
-    x : ndarray
-        The final state.
-    completed - Boolean
-        Did we reach our desired t before hitting max_steps?
-
-    Notes
-    -------
-    Integrate a system of ODEs with adaptive timestepping using the following 5-stage Butcher table
-
-    0   |
-    1/3 |  1/3
-    2/3 | -1/3   1
-    1   |  1    -1    1
-    1   |  1/8   3/8  3/8  1/8
-    ________________________________
-        |  1/8   3/8  3/8  1/8  0     #Fourth order
-        |  1/12  1/2  1/4  0    1/6   #Third order
-    ________________________________
-        |  1/24 -1/8  1/8  1/8 -1/6   #Difference for error estimation
-
-    Notice the fifth stage k5 is the same as k1 of the next step (if the step is accepted). 
-    This means we only need four function evaluations per step on average.
-    The fourth order scheme is Kutta's 3/8-rule.
-    '''
-
-    #Create a dict to specify the state along the while loop
-    #x - current value x(tau)
-    #tau - time integrated so far.
-    #h - timestep
-    #k1 - velocity vector that we save between integration steps
-    #fevals - number of function evaluations
-    loop_state = {"x": x, "tau": 0.0, "h": h, "k1": vel_fn(x), "fevals": 1, "accepted": 0, "rejected": 0}
-
-    def update_fn(_, loop_state):
-        #jax.lax.fori_loop expects a function that takes (i,loop_state). We don't care about i, so I called it _.
-        
-        def do_nothing(_):
-            return loop_state
-
-        def do_step(_):
-            x  = loop_state["x"]
-            k1 = loop_state["k1"]
-            h  = loop_state["h"]
-
-            #Normally I would define k = h*f(x) to avoid redundant multiplication by h, 
-            #but h is changing each step
-            k2 = vel_fn(x + h*k1/3)
-            k3 = vel_fn(x + h*(-k1/3 + k2))
-            k4 = vel_fn(x + h*(k1 - k2 + k3))
-
-            xf = x + h*(k1/8 + k2*3/8 + k3*3/8 + k4/8 )
-            k5 = vel_fn(xf)
-
-            #Regardless of loop logic, we did four function evaluations 
-            fevals = loop_state["fevals"] + 4
-
-            #Use all four velocity evaluations to estimate the error from this step 
-            err = h*( k1/24 - k2/8 + k3/8 + k4/8 - k5/6 )
-            err = jax.numpy.linalg.norm(err)
-
-            #Determine the next timestep
-            h = h * 0.9 * (atol / err)**(1/4)
-
-            #Check if this timestep would overstep our target time
-            tau = loop_state["tau"]
-            h = jax.lax.cond( tau + h > t, lambda _: t - tau, lambda _: h, None )
-
-            accepted = loop_state["accepted"]
-            rejected = loop_state["rejected"]
-
-            #Decide if we accept the step or not
-            #If we accept, we must update both x and tau
-            xf, tau, accepted, rejected = jax.lax.cond( err < atol, lambda _: (xf, tau + h, accepted + 1, rejected), lambda _: (x, tau, accepted, rejected + 1), None )
-
-            return {"x": xf, "tau": tau, "h": h, "k1": k5, "fevals": fevals, "accepted": accepted, "rejected": rejected}
-        return jax.lax.cond( loop_state["tau"] == t, do_nothing, do_step, None )
-
-    #Do integration
-    #loop_state = jax.lax.while_loop(cond_fun, body_fun, loop_state)
-    loop_state = jax.lax.fori_loop( 0, max_steps, update_fn, loop_state )
-    
-    completed = (loop_state["tau"] == t)
-    
-    return loop_state["x"], completed, loop_state["fevals"], loop_state["accepted"], loop_state["rejected"]
-
-
-
 
 def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps=1024, segments=1):
     '''
@@ -331,9 +222,18 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps=1024, segments=1)
     ____________________________________________________
     err |  0    0    0   -1/6   1/6 |
 
-    This scheme has several desirable properties.
-    1) 
+    
+
+    Autodiff wisdom
+    -------
+    To make reverse-mode autodiff stable, I made two changes. I believe both are important.
+    1) stop gradient calculations of h
+    2) reformulate the ODE from dx/dt = f(x) to dx/ds = t*f(x)
     '''
+
+    #Define modified dynamics: dx/ds = t*f(x)
+    mod_L = t * diag_L
+    mod_vel_fn = lambda x: t * vel_fn(x)
 
     # Create a dict to specify the state along the while loop
     # x - current value x(tau)
@@ -341,112 +241,67 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps=1024, segments=1)
     # h - timestep
     # k1 - velocity vector that we save between integration steps
     # fevals - number of function evaluations
-    loop_state = {"x": x, "tau": 0.0, "h": h, "k1": vel_fn(x), "fevals": 1, "accepted": 0, "rejected": 0}
+    loop_state = {"x": x, "tau": 0.0, "h": h, "k1": mod_vel_fn(x), "fevals": 1, "accepted": 0, "rejected": 0}
 
-    def update_fn( _, loop_state, s ):
-        #s is the segment we are on
-        t_target = t*(s+1)/segments #t_target is the final time of this segment
+    def do_step(loop_state):
+        x0 = loop_state["x"]
+        h  = loop_state["h"]
 
-        def do_nothing(_):
-            return loop_state
+        #Compute an exponential of our diagonal matrix
+        e = jnp.exp( mod_L * h/2 )
+        
+        #update with exponential twiddle
+        x  = e*x0
+        k1 = e*loop_state["k1"]
 
-        def do_step(_):
-            x0 = loop_state["x"]
-            h  = loop_state["h"]
+        #Evaluate next two stages
+        k2 = mod_vel_fn(x + h*k1/2)
+        k3 = mod_vel_fn(x + h*k2/2)
 
-            #Compute an exponential of our diagonal matrix
-            e = jnp.exp( diag_L * h/2 )
-            
-            #update with exponential twiddle
-            x  = e*x0
-            k1 = e*loop_state["k1"]
+        #update with exponential twiddle
+        x  = e*x
+        k1 = e*k1
+        k2 = e*k2
+        k3 = e*k3
 
-            #Evaluate next two stages
-            k2 = vel_fn(x + h*k1/2)
-            k3 = vel_fn(x + h*k2/2)
+        #Evaluate next two stages
+        k4 = mod_vel_fn(x + h*k3)
+        xf = x + h*(k1/6 + k2/3 + k3/3 + k4/6 )
+        k5 = mod_vel_fn(xf)
 
-            #update with exponential twiddle
-            x  = e*x
-            k1 = e*k1
-            k2 = e*k2
-            k3 = e*k3
+        #Regardless of loop logic, we did four function evaluations 
+        fevals = loop_state["fevals"] + 4
 
-            #Evaluate next two stages
-            k4 = vel_fn(x + h*k3)
-            xf = x + h*(k1/6 + k2/3 + k3/3 + k4/6 )
-            k5 = vel_fn(xf)
+        #estimate the error from this step 
+        err = h*(k5-k4)/6
+        err = jax.numpy.linalg.norm(err)
 
-            #Regardless of loop logic, we did four function evaluations 
-            fevals = loop_state["fevals"] + 4
+        #Determine the next timestep
+        h = h * 0.9 * (atol / err)**(1/4)
+        h = jax.lax.stop_gradient(h)
+       
+        tau = loop_state["tau"]
 
-            #estimate the error from this step 
-            err = h*(k5-k4)/6
-            err = jax.numpy.linalg.norm(err)
+        #I originally did this with jax.lax.cond, but I am curious how this performs
+        def clip_stepsize(h, tau):
+            overshoot = tau + h - 1
+            return h - jax.nn.relu(overshoot)
+        h = clip_stepsize(h, tau)
+ 
+        accepted = loop_state["accepted"]
+        rejected = loop_state["rejected"]
 
-            #Determine the next timestep
-            h = h * 0.9 * (atol / err)**(1/4)
-            h = jax.lax.stop_gradient(h)
+        #Decide if we accept the step or not
+        #If we accept, we must update both x and tau
+        xf, tau, accepted, rejected = jax.lax.cond( err < atol, lambda _: (xf, tau + h, accepted + 1, rejected), lambda _: (x0, tau, accepted, rejected + 1), None )
+        return {"x": xf, "tau": tau, "h": h, "k1": k5, "fevals": fevals, "accepted": accepted, "rejected": rejected}
 
-            #Check if this timestep would overstep our target time
-            tau = loop_state["tau"] #Current integration time
-            h = jax.lax.cond( tau + h > t_target, lambda _: t_target - tau, lambda _: h, None )
+    def scan_fn(loop_state, _): #ignore carry index
+        new_state = jax.lax.cond( loop_state["tau"] == 1, lambda x: x, lambda x: do_step(x), operand=loop_state )
+        return new_state, None
 
-            accepted = loop_state["accepted"]
-            rejected = loop_state["rejected"]
-
-            #Decide if we accept the step or not
-            #If we accept, we must update both x and tau
-            xf, tau, accepted, rejected = jax.lax.cond( err < atol, lambda _: (xf, tau + h, accepted + 1, rejected), lambda _: (x0, tau, accepted, rejected + 1), None )
-
-            return {"x": xf, "tau": tau, "h": h, "k1": k5, "fevals": fevals, "accepted": accepted, "rejected": rejected}
-        return jax.lax.cond( loop_state["tau"] == t_target, do_nothing, do_step, None )
-
-    '''
-    #Define a function that forces a checkpoint.
-    segment_fn = jax.checkpoint(
-    lambda s, loop_state: jax.lax.fori_loop(
-            0, max_steps,
-            lambda i, state: update_fn(i, state, s),
-            loop_state
-        )
-    )
-    '''
-    
-    def make_segment_fn(max_steps):
-        def segment_fn(s, loop_state):
-            def scan_body(carry, _):
-                state, done = carry
-
-                # Conditional update
-                new_state = jax.lax.cond(
-                    done,
-                    lambda _: state,  # skip if done
-                    lambda _: update_fn(0, state, s),  # i is unused or dummy
-                    operand=None
-                )
-
-                new_done = jax.lax.cond(
-                    done,
-                    lambda _: True,
-                    lambda _: new_state["tau"] >= t*(s+1)/segments,
-                    operand=None
-                )
-
-                return (new_state, new_done), None
-
-            # Initial done flag = False
-            (final_state, _), _ = jax.lax.scan(
-                jax.checkpoint(scan_body),  # optional: wrap scan body in checkpoint
-                (loop_state, False),
-                xs=None,
-                length=max_steps
-            )
-            return final_state
-        return jax.checkpoint(segment_fn)
-    segment_fn = make_segment_fn(max_steps)
-    
-    #segment_fn = jax.checkpoint( lambda s, loop_state: jax.lax.fori_loop( 0, max_steps, lambda: i, loop_state: update_fn(i, loop_state, s), loop_state ) )
-    loop_state = jax.lax.fori_loop( 0, segments, segment_fn, loop_state)
+    inner_loop = jax.checkpoint( lambda loop_state, _: jax.lax.scan(scan_fn, loop_state, xs=None, length=max_steps) )
+    loop_state, _ = jax.lax.scan(inner_loop, loop_state, xs=None, length=segments)
 
     #Run information that should be of interest to the user
     info = {"completed": loop_state["tau"] == t,
@@ -487,10 +342,10 @@ if __name__ == "__main__":
     if (precision == jnp.float64):
         jax.config.update("jax_enable_x64", True)
     
-    n = 256 #spatial resolution
+    n   = 128 #spatial resolution
     nu  = 1/40 #fluid dissipation
     eta = 1/40 #magnetic dissipation
-    b0  = [0.0, 1.0] # Mean magnetic field
+    b0  = [0.0, 0.1] # Mean magnetic field
 
     # Construct a dictionary for grid information
     param_dict = mhd_jax.construct_domain(n, precision)
@@ -516,7 +371,7 @@ if __name__ == "__main__":
 
     #Desired time to integrate
     t = 1.0
-    atol = 1e-4 #acceptable error per step
+    atol = 1e-2 #acceptable error per step
 
     print("Testing adaptive integration on MHD...\n")
 
@@ -537,7 +392,7 @@ if __name__ == "__main__":
         f = input_dict["f"]
         t = input_dict["t"]
         f = jnp.fft.rfft2(f) * param_dict['mask']
-        f, info = eark43( f, vel_fn, diag_L, t, h=1e-2, atol=atol, max_steps=64, segments=16)
+        f, info = eark43( f, vel_fn, diag_L, t, h=1e-2, atol=atol, max_steps=64, segments=16*2)
         f = jnp.fft.irfft2(f)
         return f, info
 
@@ -587,7 +442,7 @@ if __name__ == "__main__":
     g = g.at[1, :, :].set( jnp.cos(y) )
 
     #Tangent dict
-    tang = {"f": g, "t": 0.0}    
+    tang = {"f": g, "t": 1.0}    
 
     start = time.time()
     Jv = jacobian(tang)
@@ -608,10 +463,21 @@ if __name__ == "__main__":
     _ = jac_t(g)
 
     start = time.time()
-    wJ = jac_t(g)[0]
+    uJ = jac_t(g)[0]
     stop = time.time()
     print( f"Function returned after {stop-start:.6f} seconds." )
-    data = wJ["t"]
+    data = uJ["t"]
     print( f"temporal gradient = {data}")
-    data = wJ["f"][0,3,2]
+    data = uJ["f"][0,3,2]
     print( f"field gradient = {data}")
+
+
+    print("\nChecking that (uJ,v) = (u,Jv) to reasonable precision...")
+
+    dot1 = jnp.sum( g * Jv )
+
+    to_vec = lambda d: jax.flatten_util.ravel_pytree(d)[0]
+    dot2 = jnp.sum( to_vec(uJ) * to_vec(tang) )
+
+    print(f"(u,Jv) = {dot1}")
+    print(f"(uJ,v) = {dot2}")
