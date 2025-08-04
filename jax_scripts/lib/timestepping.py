@@ -140,7 +140,7 @@ def runge_kutta_43( x, vel_fn, t, h=1e-2, atol=1e-4):
 
 
 
-def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps=1024, segments=1):
+def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps_per_checkpoint=1024, checkpoints=1):
     '''
     Integrate forward in time with Exponential Ansatz Runge-Kutta 4(3) (EARK43).
 
@@ -161,11 +161,11 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps=1024, segments=1)
         Initial guess of timestep.
     atol: float (optional)
         Absolution TOLerance (ATOL). Accept the step if norm(error) < atol.
-    max_steps: int (optional)
-        Only integrate this many steps before returning. This has two benefits.
+    max_steps_per_checkpoint: int (optional)
+        Hardcoding a limit per checkpoint has two benefits.
             1) Prevents the code from stalling as h->0
             2) Allows reverse mode differentiation for things like adjoint looping.
-    segments: int (optional)
+    checkpoints: int (optional)
         Reverse mode differentiation exhausts memory very quickly since every integration step
         is stored. Force integration to checkpoint into evenly spaced segments.
 
@@ -176,8 +176,8 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps=1024, segments=1)
     info : dictionary
         info is a dictionary containing useful diagnostic information.
         "completed": a Boolean flag. Did we hit the desired integration time?
-        "tau": time of integration. If completed is True, then tau == t. If completed is False, 
-               then info["tau"] contains the time we did integrate to before hitting max_steps. 
+        "s": time of integration. If completed is True, then s == 1. If completed is False, 
+             then info["s"] contains the pseudotime we did integrate to before hitting max_steps. 
         "accepted": number of integration steps accepted during integration
         "rejected": number of integration steps rejected during integration
         "fevals": number of times we evaluated the nonlinear part of the time derivative.
@@ -229,7 +229,17 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps=1024, segments=1)
     To make reverse-mode autodiff stable, I made two changes. I believe both are important.
     1) stop gradient calculations of h
     2) reformulate the ODE from dx/dt = f(x) to dx/ds = t*f(x)
+    
+    Bug fixes
+    ----------
+    1) Added nan-checking for err. If err became nan from a failed timestep, h would become nan permenantly.
+       Now if err becomes nan, we try h/2 next timestep.
+    2) I was updating h for the next timestep BEFORE updating s. The order is correct now.
+    3) requiring s == 1.0 for integration to be "completed" is unstable. I now just check that jnp.abs(s-1.0) < threshold.
     '''
+
+    #Monitor the timesteps we take
+    hs = jnp.zeros([max_steps_per_checkpoint*checkpoints,])
 
     #Define modified dynamics: dx/ds = t*f(x)
     mod_L = t * diag_L
@@ -237,22 +247,27 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps=1024, segments=1)
 
     # Create a dict to specify the state along the while loop
     # x - current value x(tau)
-    # tau - time along the current segment.
+    # s - pseudotime ranging from 0 to 1
     # h - timestep
     # k1 - velocity vector that we save between integration steps
     # fevals - number of function evaluations
-    loop_state = {"x": x, "tau": 0.0, "h": h, "k1": mod_vel_fn(x), "fevals": 1, "accepted": 0, "rejected": 0}
+    # accepted - number of accepted steps
+    # rejected - number of rejected steps
+    # hs - a complete history of timesteps attempted and used by our integration.
+    #loop_state = {"x": x, "s": 0.0, "h": h, "k1": mod_vel_fn(x), "fevals": 1, "accepted": 0, "rejected": 0, "hs": hs}
+    loop_state = (x, 0.0, h, mod_vel_fn(x), 1, 0, 0, hs)
 
     def do_step(loop_state):
-        x0 = loop_state["x"]
-        h  = loop_state["h"]
+        x0, s, h, k1, fevals, accepted, rejected, hs = loop_state
+        #x0 = loop_state["x"]
+        #h  = loop_state["h"]
 
         #Compute an exponential of our diagonal matrix
         e = jnp.exp( mod_L * h/2 )
         
         #update with exponential twiddle
         x  = e*x0
-        k1 = e*loop_state["k1"]
+        k1 = e*k1
 
         #Evaluate next two stages
         k2 = mod_vel_fn(x + h*k1/2)
@@ -270,48 +285,58 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps=1024, segments=1)
         k5 = mod_vel_fn(xf)
 
         #Regardless of loop logic, we did four function evaluations 
-        fevals = loop_state["fevals"] + 4
+        fevals = fevals + 4
 
         #estimate the error from this step 
         err = h*(k5-k4)/6
-        err = jax.numpy.linalg.norm(err)
+        #err = jax.numpy.linalg.norm(err)
+        err = jnp.fft.irfft2(err) #Evaluate pointwise error in real space, not Fourier
+        err = jnp.max(jnp.abs(err)) #A pointwise maximum error seems natural
 
-        #Determine the next timestep
-        h = h * 0.9 * (atol / err)**(1/4)
-        h = jax.lax.stop_gradient(h)
-       
-        tau = loop_state["tau"]
+        #Record the current h we used this step
+        hs = hs.at[accepted + rejected].set(h)
 
-        #I originally did this with jax.lax.cond, but I am curious how this performs
-        def clip_stepsize(h, tau):
-            overshoot = tau + h - 1
+        #Determine if this step is accepted or rejected.
+        xf, k1, s, accepted, rejected = jax.lax.cond( err < atol, lambda _: (xf, k5, s + h, accepted + 1, rejected), lambda _: (x0, k1, s, accepted, rejected + 1), None )
+
+        #Determine the next timestep. Now that s is updated and we don't need the current h value any more.
+        adapt = lambda h: h * 0.9 * (atol / err)**(1/4) #Run this if err is finite
+        crash = lambda h: h/2 #Run this if the sim crashed: err is nan
+        h = jax.lax.cond( jnp.isnan(err), crash, adapt, operand=h )
+
+        def clip_stepsize(h, s):
+            overshoot = s + h - 1
             return h - jax.nn.relu(overshoot)
-        h = clip_stepsize(h, tau)
- 
-        accepted = loop_state["accepted"]
-        rejected = loop_state["rejected"]
+        h = clip_stepsize(h, s)
+        h = jax.lax.stop_gradient(h) 
 
-        #Decide if we accept the step or not
-        #If we accept, we must update both x and tau
-        xf, tau, accepted, rejected = jax.lax.cond( err < atol, lambda _: (xf, tau + h, accepted + 1, rejected), lambda _: (x0, tau, accepted, rejected + 1), None )
-        return {"x": xf, "tau": tau, "h": h, "k1": k5, "fevals": fevals, "accepted": accepted, "rejected": rejected}
+        #return {"x": xf, "s": s, "h": h, "k1": k1, "fevals": fevals, "accepted": accepted, "rejected": rejected, "hs": hs}
+        return  (xf, s, h, k1, fevals, accepted, rejected, hs)
+
+    #Determine when we completed integration.
+    complete_fn = lambda s: jnp.abs(s - 1.0) < 1e-10
 
     def scan_fn(loop_state, _): #ignore carry index
-        new_state = jax.lax.cond( loop_state["tau"] == 1, lambda x: x, lambda x: do_step(x), operand=loop_state )
+        s = loop_state[1]
+        new_state = jax.lax.cond( complete_fn(s), lambda x: x, lambda x: do_step(x), operand=loop_state )
         return new_state, None
 
-    inner_loop = jax.checkpoint( lambda loop_state, _: jax.lax.scan(scan_fn, loop_state, xs=None, length=max_steps) )
-    loop_state, _ = jax.lax.scan(inner_loop, loop_state, xs=None, length=segments)
+    inner_loop = jax.checkpoint( lambda loop_state, _: jax.lax.scan(scan_fn, loop_state, xs=None, length=max_steps_per_checkpoint) )
+    loop_state, _ = jax.lax.scan(inner_loop, loop_state, xs=None, length=checkpoints)
+
+    #unpack the state
+    x, s, h, _, fevals, accepted, rejected, hs = loop_state
 
     #Run information that should be of interest to the user
-    info = {"completed": loop_state["tau"] == t,
-            "tau": loop_state["tau"], 
-            "accepted": loop_state["accepted"],
-            "rejected": loop_state["rejected"],
-            "fevals": loop_state["fevals"]
+    info = {"completed": complete_fn(s),
+            "s": s, #If not completed, this will tell you how far along you integrated. 
+            "accepted": accepted,
+            "rejected": rejected,
+            "fevals": fevals,
+            "hs": hs
            }
 
-    return loop_state["x"], info
+    return x, info
 
 
 
@@ -370,7 +395,7 @@ if __name__ == "__main__":
     diag_L = - coeffs * k_sq #This is the operator
 
     #Desired time to integrate
-    t = 1.0
+    t = 2.0
     atol = 1e-2 #acceptable error per step
 
     print("Testing adaptive integration on MHD...\n")
@@ -392,7 +417,7 @@ if __name__ == "__main__":
         f = input_dict["f"]
         t = input_dict["t"]
         f = jnp.fft.rfft2(f) * param_dict['mask']
-        f, info = eark43( f, vel_fn, diag_L, t, h=1e-2, atol=atol, max_steps=64, segments=16*2)
+        f, info = eark43( f, vel_fn, diag_L, t, h=1e-2, atol=atol, max_steps_per_checkpoint=64, checkpoints=32)
         f = jnp.fft.irfft2(f)
         return f, info
 

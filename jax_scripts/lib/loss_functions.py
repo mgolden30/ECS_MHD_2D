@@ -2,29 +2,44 @@ import jax
 import jax.numpy as jnp
 
 import lib.mhd_jax as mhd_jax
+import lib.timestepping as timestepping
 
 
-def loss_RPO( input_dict, param_dict ):
+
+def loss_RPO_debug( input_dict, param_dict ):
     '''
     PURPOSE:
     Define a scalar loss for Relative Periodic Orbits (RPOs)
     '''
 
     # Unpack tensors we need 
-    f  = input_dict['fields']
+    f0  = input_dict['fields']
     T  = input_dict['T']
     sx = input_dict['sx']
+    
+    f0  = jnp.fft.rfft2(f0)
+
+    #Construct a dissipation operator
+    k_sq = param_dict['kx']**2 + param_dict['ky']**2
+    coeffs = jnp.array([param_dict['nu'], param_dict['eta']])
+    coeffs = jnp.reshape(coeffs, [2,1,1])
+    dissipation = - k_sq * coeffs
+
+    #Provide a nonlinear velocity function
+    vel_fn = lambda f: mhd_jax.state_vel(f, param_dict, include_dissipation=False)
+    
+    #Do the damn thing
+    f, info = timestepping.eark43(f0, vel_fn, dissipation, T, h=1e-2, atol=1e-2, max_steps_per_checkpoint=64, checkpoints=32 )
+
     steps= param_dict['steps']
-
-    f  = jnp.fft.rfft2(f)
-    f0 = jnp.copy(f)
-
     dt = T/steps
-    f = mhd_jax.eark4(f, dt, steps, param_dict )
+    f2 = mhd_jax.eark4(f0, dt, steps, param_dict )
+    from scipy.io import savemat
+    savemat("debug.mat", {"f0": jnp.fft.irfft2(f0), "f": jnp.fft.irfft2(f), "f2": jnp.fft.irfft2(f2), "hs": info["hs"]})
 
     #Shift the resulting fields
     f = jnp.exp( -1j * param_dict['kx'] * sx ) * f
-
+    
     #compute the mismatch
     diff   = f - f0
     diff_v = mhd_jax.state_vel(f, param_dict, include_dissipation=True) - mhd_jax.state_vel(f0, param_dict, include_dissipation=True)
@@ -34,10 +49,51 @@ def loss_RPO( input_dict, param_dict ):
     diff_v = jnp.fft.irfft2(diff_v)
 
     #MSE error
-    #loss = jnp.mean( jnp.square(diff)) + jnp.mean( jnp.square(diff_v) ) 
-    loss = jnp.mean( jnp.abs(diff)) #+ jnp.mean( jnp.abs(diff_v) ) 
+    loss = jnp.mean( jnp.square(diff)) #+ jnp.mean( jnp.square(diff_v) ) 
+    
+    return loss, info
 
-    return loss
+
+def loss_RPO( input_dict, param_dict, adaptive_dict ):
+    '''
+    PURPOSE:
+    Define a scalar loss for Relative Periodic Orbits (RPOs)
+    '''
+
+    # Unpack tensors we need 
+    f0 = input_dict['fields']
+    T  = input_dict['T']
+    sx = input_dict['sx']
+    
+    f0  = jnp.fft.rfft2(f0)
+
+    #Construct a dissipation operator
+    k_sq = param_dict['kx']**2 + param_dict['ky']**2
+    coeffs = jnp.array([param_dict['nu'], param_dict['eta']])
+    coeffs = jnp.reshape(coeffs, [2,1,1])
+    dissipation = - k_sq * coeffs
+
+    #Provide a nonlinear velocity function
+    vel_fn = lambda f: mhd_jax.state_vel(f, param_dict, include_dissipation=False)
+    
+    #Do the damn thing
+    f, info = timestepping.eark43(f0, vel_fn, dissipation, T, h=1e-2, atol=adaptive_dict["atol"], max_steps_per_checkpoint=adaptive_dict["max_steps_per_checkpoint"], checkpoints=adaptive_dict["checkpoints"] )
+
+    #Shift the resulting fields
+    f = jnp.exp( -1j * param_dict['kx'] * sx ) * f
+    
+    #compute the mismatch
+    diff   = f - f0
+    diff_v = mhd_jax.state_vel(f, param_dict, include_dissipation=True) - mhd_jax.state_vel(f0, param_dict, include_dissipation=True)
+
+    #Transform back to real space
+    diff   = jnp.fft.irfft2(diff)
+    diff_v = jnp.fft.irfft2(diff_v)
+
+    #MSE error
+    loss = jnp.mean( jnp.square(diff)) #+ jnp.mean( jnp.square(diff_v) ) 
+    
+    return loss, info
 
 
 def objective_RPO_multishooting( input_dict, param_dict ):
@@ -286,7 +342,7 @@ def loss_RPO_memory_efficient( input_dict, param_dict, segments ):
             v0= jnp.fft.irfft2(v0)
 
             #Compute the mean squared error
-            return jnp.mean( jnp.square( f - f0 ) + jnp.square( v - v0 ) )
+            return jnp.mean( jnp.square( f - f0 )) #+ jnp.square( v - v0 ) )
             #return jnp.mean( jnp.abs( f - f0 ) + jnp.abs( v - v0 ) )
 
 
