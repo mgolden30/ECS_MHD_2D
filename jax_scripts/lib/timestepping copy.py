@@ -251,23 +251,18 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps_per_checkpoint=10
     # h - timestep
     # k1 - velocity vector that we save between integration steps
     # fevals - number of function evaluations
-    # accepted - number of accepted steps
-    # rejected - number of rejected steps
-    # hs - a complete history of timesteps attempted and used by our integration.
-    #loop_state = {"x": x, "s": 0.0, "h": h, "k1": mod_vel_fn(x), "fevals": 1, "accepted": 0, "rejected": 0, "hs": hs}
-    loop_state = (x, 0.0, h, mod_vel_fn(x), 1, 0, 0, hs)
+    loop_state = {"x": x, "s": 0.0, "h": h, "k1": mod_vel_fn(x), "fevals": 1, "accepted": 0, "rejected": 0, "hs": hs}
 
     def do_step(loop_state):
-        x0, s, h, k1, fevals, accepted, rejected, hs = loop_state
-        #x0 = loop_state["x"]
-        #h  = loop_state["h"]
+        x0 = loop_state["x"]
+        h  = loop_state["h"]
 
         #Compute an exponential of our diagonal matrix
         e = jnp.exp( mod_L * h/2 )
         
         #update with exponential twiddle
         x  = e*x0
-        k1 = e*k1
+        k1 = e*loop_state["k1"]
 
         #Evaluate next two stages
         k2 = mod_vel_fn(x + h*k1/2)
@@ -285,15 +280,18 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps_per_checkpoint=10
         k5 = mod_vel_fn(xf)
 
         #Regardless of loop logic, we did four function evaluations 
-        fevals = fevals + 4
+        fevals = loop_state["fevals"] + 4
 
         #estimate the error from this step 
         err = h*(k5-k4)/6
-        #err = jax.numpy.linalg.norm(err)
-        err = jnp.fft.irfft2(err) #Evaluate pointwise error in real space, not Fourier
-        err = jnp.max(jnp.abs(err)) #A pointwise maximum error seems natural
+        err = jax.numpy.linalg.norm(err)
+
+        s = loop_state["s"]
+        accepted = loop_state["accepted"]
+        rejected = loop_state["rejected"]
 
         #Record the current h we used this step
+        hs = loop_state["hs"]
         hs = hs.at[accepted + rejected].set(h)
 
         #Determine if this step is accepted or rejected.
@@ -310,33 +308,28 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps_per_checkpoint=10
         h = clip_stepsize(h, s)
         h = jax.lax.stop_gradient(h) 
 
-        #return {"x": xf, "s": s, "h": h, "k1": k1, "fevals": fevals, "accepted": accepted, "rejected": rejected, "hs": hs}
-        return  (xf, s, h, k1, fevals, accepted, rejected, hs)
+        return {"x": xf, "s": s, "h": h, "k1": k1, "fevals": fevals, "accepted": accepted, "rejected": rejected, "hs": hs}
 
     #Determine when we completed integration.
     complete_fn = lambda s: jnp.abs(s - 1.0) < 1e-10
 
     def scan_fn(loop_state, _): #ignore carry index
-        s = loop_state[1]
-        new_state = jax.lax.cond( complete_fn(s), lambda x: x, lambda x: do_step(x), operand=loop_state )
+        new_state = jax.lax.cond( complete_fn(loop_state["s"]), lambda x: x, lambda x: do_step(x), operand=loop_state )
         return new_state, None
 
     inner_loop = jax.checkpoint( lambda loop_state, _: jax.lax.scan(scan_fn, loop_state, xs=None, length=max_steps_per_checkpoint) )
     loop_state, _ = jax.lax.scan(inner_loop, loop_state, xs=None, length=checkpoints)
 
-    #unpack the state
-    x, s, h, _, fevals, accepted, rejected, hs = loop_state
-
     #Run information that should be of interest to the user
-    info = {"completed": complete_fn(s),
-            "s": s, #If not completed, this will tell you how far along you integrated. 
-            "accepted": accepted,
-            "rejected": rejected,
-            "fevals": fevals,
-            "hs": hs
+    info = {"completed": complete_fn(loop_state["s"]),
+            "s": loop_state["s"], #If not completed, this will tell you how far along you integrated. 
+            "accepted": loop_state["accepted"],
+            "rejected": loop_state["rejected"],
+            "fevals": loop_state["fevals"],
+            "hs": loop_state["hs"]
            }
 
-    return x, info
+    return loop_state["x"], info
 
 
 

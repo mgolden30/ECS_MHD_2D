@@ -13,15 +13,15 @@ import lib.dictionaryIO as dictionaryIO
 from scipy.io import savemat
 
 n  = 256
-dt = 1/128
-ministeps = 32
+dt = 1/256
+ministeps = 32*2
 precision = jnp.float64
 
 transient_steps = 4*512*8
 steps = 256
 
-nu  = 1/40
-eta = 1/40
+nu  = 1/200
+eta = 1/200
 b0  = [0.0, 0.1] # Mean magnetic field
 
 # If you want double precision, change JAX defaults
@@ -134,9 +134,9 @@ plt.savefig("figures/recurrence.png", dpi=1000)
 
 
 input_dict = {"fs": fs, "dist": dist}
-dictionaryIO.save_dicts( "turb2.npz", input_dict, param_dict )
+dictionaryIO.save_dicts( "turb.npz", input_dict, param_dict )
 
 
 #Save to MATLAB format for interactive visualization
 fs = jnp.fft.irfft2(fs)
-savemat( "dist2.mat", {"dist": dist, "fs": fs} )
+savemat( "dist.mat", {"dist": dist, "fs": fs} )

@@ -1,5 +1,7 @@
 '''
-Perform Newton-GMRES to converge RPOs
+Perform standard Newton-GMRES to converge RPOs.
+
+By "standard" GMRES, I mean augmenting the Jacobian with two phase conditions.
 '''
 
 import time
@@ -9,7 +11,7 @@ import jax.numpy as jnp
 
 import lib.mhd_jax as mhd_jax
 import lib.loss_functions as loss_functions
-import lib.adam as adam
+
 from lib.linalg import gmres
 import lib.dictionaryIO as dictionaryIO
 import lib.preconditioners as precond
@@ -24,10 +26,7 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_680.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/8.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_8.npz")
 input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("newton/11.npz")
 

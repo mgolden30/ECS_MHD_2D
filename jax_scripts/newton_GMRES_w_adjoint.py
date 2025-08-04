@@ -26,13 +26,11 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_680.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_8.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re40/1.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("newton/9.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_64.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("test.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re40b/1.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/5.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_112.npz")
 
 #mode = "multi_shooting"
 mode = "single_shooting"
@@ -146,7 +144,7 @@ print(x0)
 ######################################
 
 maxit = 1024
-inner = 32
+inner = 32*2  
 outer = 1
 
 for i in range(maxit):
