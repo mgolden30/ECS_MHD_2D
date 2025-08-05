@@ -18,8 +18,8 @@ if (precision == jnp.float64):
 # By = 1.0, Re = 100
 input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE5.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_64.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("newton/0.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_6912.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/0.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
 
 f = input_dict['fields']

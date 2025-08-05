@@ -31,16 +31,16 @@ import lib.utils as utils
 # ideally, you do not have to change anything below this section
 precision = jnp.float64
 filename = "turb.npz" #Set to "turb.npz" for a new state or "data/adjoint_descent_8.npz" for example if you want to restart optimization for an old state
-filename = "data/adjoint_descent_120.npz" 
+filename = "data/adjoint_descent_6912.npz" 
 idx = [189, 200] #If filename == "turb.npz", then these will determine the initial guess of the RPO from turbulence 
-lr = 1e-2 #Learning rate of ADAM
-maxit = 1024 #Maximum number of ADAM steps
-save_every = 8 #Save the fluid state after this many ADAM steps.
+lr = 2e-3 #Learning rate of ADAM
+maxit = 16*1024 #Maximum number of ADAM steps
+save_every = 32 #Save the fluid state after this many ADAM steps.
 #The current function loss_functions.loss_RPO uses adaptive timestepping, which has benefits and drawbacks.
 #Define a dictionary of parameters that you can tweak here.
 adaptive_dict = {
     "atol": 1e-4, #We make the timestep small enough that each step has max(abs(err)) < atol
-    "checkpoints": 32, #How many times so we restart integration to preserve memory?
+    "checkpoints": 8, #How many times so we restart integration to preserve memory?
     "max_steps_per_checkpoint": 128 #How many steps do we take per timestep?
 }
 

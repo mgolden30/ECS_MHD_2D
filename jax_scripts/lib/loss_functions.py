@@ -49,7 +49,7 @@ def loss_RPO_debug( input_dict, param_dict ):
     diff_v = jnp.fft.irfft2(diff_v)
 
     #MSE error
-    loss = jnp.mean( jnp.square(diff)) #+ jnp.mean( jnp.square(diff_v) ) 
+    loss = jnp.mean( jnp.square(diff) + jnp.mean( jnp.square(diff_v) )) 
     
     return loss, info
 
@@ -91,7 +91,7 @@ def loss_RPO( input_dict, param_dict, adaptive_dict ):
     diff_v = jnp.fft.irfft2(diff_v)
 
     #MSE error
-    loss = jnp.mean( jnp.square(diff)) #+ jnp.mean( jnp.square(diff_v) ) 
+    loss = jnp.mean( jnp.square(diff) ) #+ jnp.square(diff_v) ) 
     
     return loss, info
 
