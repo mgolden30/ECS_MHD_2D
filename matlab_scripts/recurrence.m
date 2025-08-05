@@ -51,7 +51,7 @@ k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 80;%64; %30
+frames = 88;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i
@@ -104,17 +104,6 @@ for i = 1:2:frames
 end
 end
 
-%%
-figure(2);
-clf;
-%tiledlayout(2,2);
-load("timeseries/" + 0 + ".mat");
-vis(f);
-
-load("timeseries/" + 24 + ".mat");
-vis(f);
-
-
 
 
 function vis(f)
@@ -125,7 +114,7 @@ function vis(f)
   %imagesc( [data,data;data,data] );
   imagesc(data);
   axis square;
-  clim([-10 10]/2);
+  clim([-10 10]);
   title("$\nabla \times {\bf u}$", "interpreter", "latex", "fontsize", fs);
   set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
 
@@ -134,7 +123,7 @@ function vis(f)
   %imagesc( [data,data;data,data] );
   imagesc(data);
   axis square;
-  clim([-10 10]/2);
+  clim([-10 10]);
   title("$\nabla \times {\bf B}$", "interpreter", "latex", "fontsize", fs);
   set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
 end
