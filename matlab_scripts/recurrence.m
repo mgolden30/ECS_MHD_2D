@@ -69,6 +69,8 @@ j_sq(end+1) = j_sq(1);
 
 
 %%
+
+make_gif = false;
 figure(1);
 while(true)
 for i = 1:2:frames
@@ -82,11 +84,12 @@ for i = 1:2:frames
   f = real(ifft(f, [], 2));
 
   clf;
-  tiledlayout(1,3);
+  tiledlayout(1,2);
   vis(f);
 
   colormap bluewhitered
 
+  %{
   nexttile
   plot( w_sq, j_sq, "Color", "black" );
   xlabel("$\langle \omega^2 \rangle$", "Interpreter", "latex" , "fontsize", 32  );
@@ -97,10 +100,17 @@ for i = 1:2:frames
   hold off
 
   axis square;
+  %}
 
   drawnow;
 
-  %saveas(gcf, sprintf("frames/%03d.png", i) );
+  if make_gif
+    saveas(gcf, sprintf("frames/%03d.png", i) );
+  end
+end
+
+if make_gif
+  break;
 end
 end
 
