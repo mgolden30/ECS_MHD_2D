@@ -12,7 +12,7 @@ infile = "solutions/Re200/1.npz"
 outfile = "high_res.npz"
 
 input_dict, param_dict = dictionaryIO.load_dicts(infile)
-print(f"Loaded state... Current resolution of x is {param_dict["x"].shape}.")
+print(f"Loaded state... Current resolution of x is {param_dict['x'].shape}.")
 
 #Define the new target resolution
 n = 512
@@ -55,14 +55,14 @@ def change_resolution( f, n ):
 param_dict.update( mhd_jax.construct_domain( n, data_type=jnp.float64 ) )
 
 #Change resolution of fields
-print(f"mean squared fields = {jnp.mean(jnp.square(input_dict["fields"])):.6e} before resolution change")
+print(f"mean squared fields = {jnp.mean(jnp.square(input_dict['fields'])):.6e} before resolution change")
 change_res2 = jax.vmap( lambda f: change_resolution(f,n))
 input_dict["fields"] = change_res2(input_dict["fields"])
-print(f"mean squared fields = {jnp.mean(jnp.square(input_dict["fields"])):.6e} after resolution change")
+print(f"mean squared fields = {jnp.mean(jnp.square(input_dict['fields'])):.6e} after resolution change")
 
 #Also change the forcing
-print(f"mean squared fields = {jnp.mean(jnp.square(param_dict["forcing"])):.6e} before resolution change")
+print(f"mean squared fields = {jnp.mean(jnp.square(param_dict['forcing'])):.6e} before resolution change")
 param_dict["forcing"] = change_resolution(param_dict["forcing"], n)
-print(f"mean squared fields = {jnp.mean(jnp.square(param_dict["forcing"])):.6e} after resolution change")
+print(f"mean squared fields = {jnp.mean(jnp.square(param_dict['forcing'])):.6e} after resolution change")
 
 dictionaryIO.save_dicts(outfile, input_dict, param_dict)
