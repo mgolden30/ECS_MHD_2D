@@ -45,13 +45,13 @@ end
 
 %%
 
-n = 256;
+n = 256*2;
 k = 0:n-1;
 k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames =112;%64; %30
+frames = 88;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i

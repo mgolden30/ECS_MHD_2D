@@ -5,8 +5,6 @@ Use Newton-Krylov methods to converge RPOs
 '''
 
 
-
-
 import time
 import jax
 import jax.flatten_util
@@ -14,12 +12,15 @@ import jax.numpy as jnp
 
 #import lib.mhd_jax as mhd_jax
 import lib.loss_functions as loss_functions
-from lib.linalg import adjoint_GMRES
+from lib.linalg import gmres
 import lib.dictionaryIO as dictionaryIO
 import lib.preconditioners as precond
 import lib.utils as utils
 
 from scipy.io import savemat, loadmat
+
+
+
 
 ###############################
 # Construct numerical grid
@@ -37,6 +38,20 @@ input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_8.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_6912.npz")
 
 input_dict, param_dict = dictionaryIO.load_dicts("high_res.npz")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #mode = "multi_shooting"
 mode = "single_shooting"
@@ -82,8 +97,13 @@ def run_and_time( fn, x ):
     return y, stop-start
 
 def relative_error_RPO( input_dict, f ):
-    norm = lambda x: jnp.sum( jnp.square(x) )
+    norm = lambda x: jnp.sqrt(jnp.sum( jnp.square(x)) )
     return norm(f["fields"]) / norm(input_dict["fields"])
+
+
+
+
+
 
 
 
@@ -92,28 +112,35 @@ def relative_error_RPO( input_dict, f ):
 ######################################
 
 maxit = 1024
-inner = 32
+inner = 16
 outer = 1
 damp  = 0.1
 
 for i in range(maxit):
     #Evaluate the objective function
-    f, f_walltime = run_and_time(objective, input_dict)
+    f, f_walltime = run_and_time(obj, input_dict)
 
     #Compute the magnitude of the state vector
     print(f"relative error {relative_error_RPO(input_dict, f):.3e}")
 
-    #Define a linear operator for GMRES
-    #Do this every iteration since input_dict changes
-    lin_op = lambda v: flat(jac(input_dict, unflat_right(v)))
+    #Turn f into a vector
+    f_vec = flatten(f)
+
+    #Define the Jacobian matrix acting on vectors, not dictionaries
+    lin_op = jax.jit(lambda x: flatten(jac(input_dict, unflatten_right(x))))
 
     #Define a linear operator for the transpose
-    _, jacT = jax.vjp( objective, input_dict, has_aux=False )
-    lin_op_T = jax.jit( lambda v: jax.flatten_util.ravel_pytree( jacT(unravel_fn_left(v)) )[0] )
+    _, jacT = jax.vjp( obj, input_dict, has_aux=False )
+    lin_op_T = jax.jit( lambda v: flatten(jacT(unflatten_left(v))))
+
+    #Apply the Jacobian transpose
+    A = lambda x: lin_op_T(lin_op(x))
+    b = lin_op_T(f_vec)
 
     #Do GMRES
     start = time.time()
-    step = adjoint_GMRES( A=lin_op,  A_t=lin_op_T, b=f_vec, m=f_vec.size, n=input_vec.size, inner=inner, outer=outer, precond_left=[], x0_fn=lambda x,_: x, seed=0)
+    s_min = 0.5
+    step = gmres(A, b, inner, s_min, tol=1e-8, preconditioner_list=[], output_index=0 )
     stop = time.time()
     gmres_walltime = stop - start
 
@@ -128,7 +155,7 @@ for i in range(maxit):
     for _ in range(20):
         x_temp = x - damp * step
         temp_dict = unravel_fn(x_temp)
-        f_temp = objective(temp_dict)
+        f_temp = obj(temp_dict)
         f_temp_vec = jax.flatten_util.ravel_pytree(f_temp)[0]
 
         print(f"Trying damp = {damp:.3e}")
