@@ -96,6 +96,62 @@ def loss_RPO( input_dict, param_dict, adaptive_dict ):
     return loss, info
 
 
+def objective_RPO_adaptive( input_dict, param_dict, adaptive_dict ):
+    '''
+    PURPOSE:
+    Define a scalar loss for Relative Periodic Orbits (RPOs)
+    '''
+
+    # Unpack tensors we need 
+    f0 = input_dict['fields']
+    T  = input_dict['T']
+    sx = input_dict['sx']
+    
+    f0  = jnp.fft.rfft2(f0)
+
+    #Construct a dissipation operator
+    k_sq = param_dict['kx']**2 + param_dict['ky']**2
+    coeffs = jnp.array([param_dict['nu'], param_dict['eta']])
+    coeffs = jnp.reshape(coeffs, [2,1,1])
+    dissipation = - k_sq * coeffs
+
+    #Provide a nonlinear velocity function
+    vel_fn = lambda f: mhd_jax.state_vel(f, param_dict, include_dissipation=False)
+    
+    #Do the damn thing
+    f, info = timestepping.eark43(f0, vel_fn, dissipation, T, h=1e-2, atol=adaptive_dict["atol"], max_steps_per_checkpoint=adaptive_dict["max_steps_per_checkpoint"], checkpoints=adaptive_dict["checkpoints"] )
+
+    #Shift the resulting fields
+    f = jnp.exp( -1j * param_dict['kx'] * sx ) * f
+    
+    #compute the mismatch
+    diff = jnp.fft.irfft2(f - f0)
+    
+    #Compute the x and t derivatives for phase conditions
+    vt = mhd_jax.state_vel(f0, param_dict, include_dissipation=True)
+    vx = 1j*param_dict['kx']*f0
+
+    #Move them to real space and stop the gradient
+    vt = jax.lax.stop_gradient( jnp.fft.irfft2(vt) )
+    vx = jax.lax.stop_gradient( jnp.fft.irfft2(vx) )
+    
+    #Compute dot products with our state
+    f0 = jnp.fft.irfft2(f0)
+    pt = jnp.sum( vt * f0 )
+    px = jnp.sum( vx * f0 )
+
+    #Force them to be zero, but not differentiate to zero
+    pt = pt - jax.lax.stop_gradient(pt)
+    px = px - jax.lax.stop_gradient(px)
+
+    out_dict = {"fields": diff, "phase_t": pt, "phase_x": px }
+
+    return out_dict 
+
+
+
+
+
 def objective_RPO_multishooting( input_dict, param_dict ):
     '''
     PURPOSE:

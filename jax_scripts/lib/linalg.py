@@ -64,6 +64,7 @@ def gmres(A, b, m, s_min, tol=1e-8, preconditioner_list=[], output_index=0 ):
         H = H.at[k+1, k].set(hk1)
         Q = Q.at[:,k+1].set(Aq / hk1)
 
+        '''
         #Rotate the right hand side to monitor the relative residual
         c = H[k,k]
         s = H[k+1,k]
@@ -78,7 +79,7 @@ def gmres(A, b, m, s_min, tol=1e-8, preconditioner_list=[], output_index=0 ):
         v = e1[k:k+2]
         e1 = e1.at[k:k+2].set( R @ v ) 
         jax.debug.print(f"Krylov subspace dimension {k}: relative residual = {jnp.abs(e1[k+1]):.6e}")
-
+        '''
 
     #Project b onto the orthonormal basis
     b2 = Q.transpose() @ b

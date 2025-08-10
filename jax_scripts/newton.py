@@ -1,7 +1,5 @@
 '''
-Written by Matthew Golden August 7th
-
-Use Newton-Krylov methods to converge RPOs
+The goal of this script is to use Newton-GMRES.
 '''
 
 
@@ -14,10 +12,7 @@ import jax.numpy as jnp
 import lib.loss_functions as loss_functions
 from lib.linalg import gmres
 import lib.dictionaryIO as dictionaryIO
-import lib.preconditioners as precond
 import lib.utils as utils
-
-from scipy.io import savemat, loadmat
 
 
 
@@ -31,51 +26,37 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_8.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_336.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re200/1_high_res.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/50.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_6912.npz")
-
-input_dict, param_dict = dictionaryIO.load_dicts("high_res.npz")
-
+#input_dict, param_dict = dictionaryIO.load_dicts("high_res.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("temp.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("newton/1.npz")
 
 
 
 
+##################
+# NEWTON OPTIONS
+##################
 
-
-
-
-
-
-
-
-
-
-#mode = "multi_shooting"
-mode = "single_shooting"
-
-if mode == "single_shooting":
-    print(param_dict["steps"])
-    print(input_dict["fields"].shape)
-
-    #define number of segements for memory checkpointing
-    num_checkpoints = 32
-    param_dict.update(  {"ministeps": int(param_dict["steps"]//num_checkpoints), "num_checkpoints": int(num_checkpoints)})
-
-    #Define the RPO objective function
-    obj = loss_functions.objective_RPO_with_checkpoints
-
-
-if mode == "multi_shooting":
-    #Define the RPO objective function
-    obj = loss_functions.objective_RPO_multishooting
+shooting_mode = "single_shooting" #"single_shooting" or "multi_shooting"
+integrate_mode = "adaptive" #"fixed_timesteps" or "adaptive"
+use_transpose = "no" #"yes" or "no". "no" solves Ax=b. "yes" solves A^T A x = A^T b
+adaptive_dict = {
+    "atol": 1e-4, #We make the timestep small enough that each step has max(abs(err)) < atol
+    "checkpoints": 32, #How many times so we restart integration to preserve memory?
+    "max_steps_per_checkpoint": 32 #How many steps do we take per timestep?
+}
+num_checkpoints = 32 #for fixed timestep integration
 
 
 
 
 
+
+
+obj, param_dict = utils.choose_objective_fn( shooting_mode, integrate_mode, param_dict, num_checkpoints, adaptive_dict )
 
 #utility function to JIT the objective function and get a function for the JVP
 obj, jac = utils.compile_objective_and_Jacobian( input_dict, param_dict, obj )
@@ -103,18 +84,14 @@ def relative_error_RPO( input_dict, f ):
 
 
 
-
-
-
-
 ######################################
 # Newton-GMRES starts here
 ######################################
 
 maxit = 1024
-inner = 16
+inner = 32
 outer = 1
-damp  = 0.1
+#damp  = 0.01
 
 for i in range(maxit):
     #Evaluate the objective function
@@ -129,18 +106,10 @@ for i in range(maxit):
     #Define the Jacobian matrix acting on vectors, not dictionaries
     lin_op = jax.jit(lambda x: flatten(jac(input_dict, unflatten_right(x))))
 
-    #Define a linear operator for the transpose
-    _, jacT = jax.vjp( obj, input_dict, has_aux=False )
-    lin_op_T = jax.jit( lambda v: flatten(jacT(unflatten_left(v))))
-
-    #Apply the Jacobian transpose
-    A = lambda x: lin_op_T(lin_op(x))
-    b = lin_op_T(f_vec)
-
     #Do GMRES
     start = time.time()
-    s_min = 0.5
-    step = gmres(A, b, inner, s_min, tol=1e-8, preconditioner_list=[], output_index=0 )
+    s_min = 1
+    step = gmres(lin_op, f_vec, inner, s_min, tol=1e-8, preconditioner_list=[], output_index=0 )
     stop = time.time()
     gmres_walltime = stop - start
 
@@ -148,7 +117,6 @@ for i in range(maxit):
     
     #update the input_dict
     x, unravel_fn = jax.flatten_util.ravel_pytree( input_dict )
-    
     
     #Do a line search
     damp = 1.0
@@ -164,10 +132,9 @@ for i in range(maxit):
             break
         damp = damp/2
     input_dict = unravel_fn(x)
-    
+
     #x = x - damp*step
     #input_dict = unravel_fn(x)
-    
 
     #Dealias after every Newton step
     fields = input_dict['fields']
