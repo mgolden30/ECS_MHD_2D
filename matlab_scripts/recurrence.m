@@ -10,11 +10,18 @@ imagesc(dist);
 axis square;
 set(gca, "ydir", "normal");
 colorbar();
-clim([0.6,1]);
-
+clim([0,1]);
+colormap jet;
 
 
 %%
+% Prepare the new file.
+vidObj = VideoWriter('turbulence.avi');
+vidObj.FrameRate = 15;
+open(vidObj);
+
+
+set(gcf, "color", "black");
 for i = 1:size(fs,1)
   clf;
   tiledlayout(1,2);
@@ -22,7 +29,13 @@ for i = 1:size(fs,1)
   drawnow;
 
   %saveas(gcf, sprintf("frames/%03d.png", i) );
-end
+  % Write each frame to the file.
+  currFrame = getframe(gcf);
+  writeVideo(vidObj,currFrame);
+end  
+% Close the file.
+close(vidObj);
+
 
 %%
 idx = [349, 365];
@@ -31,6 +44,10 @@ idx = [118, 132];
 idx = [58, 88];
 idx = [100, 112];
 idx = [189, 200];
+idx = [170, 182];
+idx = [101, 110];
+idx = [19, 43];
+
 
 dt = 1/256;
 ministeps = 64;
@@ -45,13 +62,13 @@ end
 
 %%
 
-n = 256*2;
+n = 256;
 k = 0:n-1;
 k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 88;%64; %30
+frames = 192;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i
@@ -118,14 +135,15 @@ end
 
 function vis(f)
   fs = 32;
+  R = 2;
 
   nexttile
   data = squeeze(f(1,:,:)).';
   %imagesc( [data,data;data,data] );
   imagesc(data);
   axis square;
-  clim([-10 10]);
-  title("$\nabla \times {\bf u}$", "interpreter", "latex", "fontsize", fs);
+  clim([-10 10]*R);
+  title("$\nabla \times {\bf u}$", "interpreter", "latex", "fontsize", fs, "color", "white");
   set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
 
   nexttile
@@ -133,7 +151,9 @@ function vis(f)
   %imagesc( [data,data;data,data] );
   imagesc(data);
   axis square;
-  clim([-10 10]);
-  title("$\nabla \times {\bf B}$", "interpreter", "latex", "fontsize", fs);
+  clim([-10 10]*R);
+  title("$\nabla \times {\bf B}$", "interpreter", "latex", "fontsize", fs, "color", "white");
   set(gca, 'ydir', 'normal'); xticks([]); yticks([]);
+
+  colormap blueblackred
 end
