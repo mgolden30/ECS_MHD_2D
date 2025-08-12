@@ -144,8 +144,13 @@ def objective_RPO_adaptive( input_dict, param_dict, adaptive_dict ):
     pt = pt - jax.lax.stop_gradient(pt)
     px = px - jax.lax.stop_gradient(px)
 
+    #Try rescaling these constraints to see the impact
+    pt = pt / f0.size
+    px = px / f0.size
+
     out_dict = {"fields": diff*(1.0 + 1.0/T), "phase_t": pt, "phase_x": px }
 
+    #jax.debug.print(f"completed: {info['completed']}, accepted: {info['accepted']}, rejected: {info['rejected']}")
     return out_dict 
 
 

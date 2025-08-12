@@ -64,46 +64,28 @@ def gmres(A, b, m, s_min, tol=1e-8, preconditioner_list=[], output_index=0 ):
         H = H.at[k+1, k].set(hk1)
         Q = Q.at[:,k+1].set(Aq / hk1)
 
-        '''
-        #Rotate the right hand side to monitor the relative residual
-        c = H[k,k]
-        s = H[k+1,k]
-        r = jnp.sqrt( c*c + s*s )
-
-        c = c/r
-        s = s/r
-  
-        R = jnp.array( [[c,s], [-s,c]] )
-        
-        #Update e1
-        v = e1[k:k+2]
-        e1 = e1.at[k:k+2].set( R @ v ) 
-        jax.debug.print(f"Krylov subspace dimension {k}: relative residual = {jnp.abs(e1[k+1]):.6e}")
-        '''
-
     #Project b onto the orthonormal basis
     b2 = Q.transpose() @ b
-    
-    #e1 = jnp.zeros(m+1).at[0].set(beta)
-    #y, _, _, _ = jnp.linalg.lstsq(H, b2, rcond=None)
 
+    if s_min == 0:
+        y, _, _, _ = jnp.linalg.lstsq(H, b2, rcond=None)
+    else:
+        #There is some singular value threshold we should respect
+        U, s, Vh = jnp.linalg.svd(H, full_matrices=False)
+        b2 = U.T @ b2
+        inv_s = 1 / s
+        inv_s = inv_s.at[ s < s_min ].set(1) #NEVER INCREASE THE SIZE OF A STABLE DIRECTION
+        b2 = b2 * inv_s
+        y  = Vh.T @ b2
+        
     #filename = f"gmres_debug_{output_index}.mat"
     #savemat(filename, {"H": H, "b": b2, "f": b, "Q": Q})
 
-    U, s, Vh = jnp.linalg.svd(H, full_matrices=False)
-
-    b2 = U.T @ b2
-
-    inv_s = 1 / s
-
-    #NEVER INCREASE THE SIZE OF A STABLE DIRECTION
-    inv_s = inv_s.at[ s < s_min ].set(1)
-
-    b2 = b2 * inv_s
-    y  = Vh.T @ b2
     x = Q[:, :m] @ y
 
-    return x
+    #Compute the relative residual the lazy (but accurate) way
+    rel_res = jnp.linalg.norm( A(x) - b )/jnp.linalg.norm(b)
+    return x, rel_res
 
 
 

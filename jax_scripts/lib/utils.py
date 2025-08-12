@@ -85,7 +85,7 @@ def choose_objective_fn( shooting_mode, integrate_mode, param_dict, num_checkpoi
 
     if shooting_mode == "single_shooting" and integrate_mode == "fixed_timesteps":
         print(f"Choosing single shooting with fixed timesteps:")
-        print(f"steps = {param_dict["steps"]}")
+        print(f"steps = {param_dict['steps']}")
         print(f"num_checkpoints = {num_checkpoints}")
         #define number of segements for memory checkpointing
         param_dict.update(  {"ministeps": int(param_dict["steps"]//num_checkpoints), "num_checkpoints": int(num_checkpoints)})
@@ -95,7 +95,7 @@ def choose_objective_fn( shooting_mode, integrate_mode, param_dict, num_checkpoi
     if shooting_mode == "single_shooting" and integrate_mode == "adaptive":
         print(f"Choosing single shooting with adaptive timestepping:")
         obj = lambda input_dict, param_dict: loss_functions.objective_RPO_adaptive( input_dict, param_dict, adaptive_dict )
-        
+
     if shooting_mode == "multi_shooting":
         print(f"ERROR: multishooting is experimental and not quite implemented. Yell at Matt.")
         exit()
