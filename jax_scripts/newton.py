@@ -26,12 +26,13 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_336.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_128.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re200/1_high_res.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("high_res.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("temp.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/1.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_12608.npz")
 
 
 
@@ -89,9 +90,9 @@ def relative_error_RPO( input_dict, f ):
 ######################################
 
 maxit = 1024
-inner = 32
+inner = 128
 outer = 1
-#damp  = 0.01
+damp  = 0.1
 
 for i in range(maxit):
     #Evaluate the objective function
@@ -118,6 +119,7 @@ for i in range(maxit):
     #update the input_dict
     x, unravel_fn = jax.flatten_util.ravel_pytree( input_dict )
     
+    #'''
     #Do a line search
     damp = 1.0
     for _ in range(20):
@@ -132,6 +134,7 @@ for i in range(maxit):
             break
         damp = damp/2
     input_dict = unravel_fn(x)
+    #'''
 
     #x = x - damp*step
     #input_dict = unravel_fn(x)

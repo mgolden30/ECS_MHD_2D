@@ -17,11 +17,11 @@ dt = 1/256
 ministeps = 32*2
 precision = jnp.float64
 
-transient_steps = 4*512*2*8
+transient_steps = 4*512*2*4
 steps = 256
 
-nu  = 1/100
-eta = 1/100
+nu  = 1/50
+eta = 1/50
 b0  = [0.0, 0.1] # Mean magnetic field
 
 # If you want double precision, change JAX defaults

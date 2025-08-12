@@ -46,7 +46,7 @@ idx = [100, 112];
 idx = [189, 200];
 idx = [170, 182];
 idx = [101, 110];
-idx = [19, 43];
+idx = [67, 91];
 
 
 dt = 1/256;
@@ -90,7 +90,7 @@ j_sq(end+1) = j_sq(1);
 make_gif = false;
 figure(1);
 while(true)
-for i = 1:2:frames
+for i = 1:4:frames
   i
   %data = load("../traj/" + i + ".mat");
 
@@ -104,7 +104,7 @@ for i = 1:2:frames
   tiledlayout(1,2);
   vis(f);
 
-  colormap bluewhitered
+  colormap blueblackred
 
   %{
   nexttile

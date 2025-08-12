@@ -144,7 +144,7 @@ def objective_RPO_adaptive( input_dict, param_dict, adaptive_dict ):
     pt = pt - jax.lax.stop_gradient(pt)
     px = px - jax.lax.stop_gradient(px)
 
-    out_dict = {"fields": diff, "phase_t": pt, "phase_x": px }
+    out_dict = {"fields": diff*(1.0 + 1.0/T), "phase_t": pt, "phase_x": px }
 
     return out_dict 
 

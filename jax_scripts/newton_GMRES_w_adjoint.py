@@ -29,7 +29,7 @@ if (precision == jnp.float64):
 input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_568.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re200/1_high_res.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("newton/5.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("newton/1.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_6912.npz")
 
 #input_dict, param_dict = dictionaryIO.load_dicts("high_res.npz")
@@ -150,7 +150,7 @@ print(x0)
 ######################################
 
 maxit = 1024
-inner =   64
+inner = 64
 outer = 1
 damp  = 0.1
 
