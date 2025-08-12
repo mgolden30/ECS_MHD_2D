@@ -89,6 +89,7 @@ j_sq(end+1) = j_sq(1);
 
 make_gif = false;
 figure(1);
+set(gcf, "color", "k");
 while(true)
 for i = 1:4:frames
   i
@@ -101,12 +102,11 @@ for i = 1:4:frames
   f = real(ifft(f, [], 2));
 
   clf;
-  tiledlayout(1,2);
+  tiledlayout(1,3);
   vis(f);
 
   colormap blueblackred
 
-  %{
   nexttile
   plot( w_sq, j_sq, "Color", "black" );
   xlabel("$\langle \omega^2 \rangle$", "Interpreter", "latex" , "fontsize", 32  );
@@ -117,7 +117,7 @@ for i = 1:4:frames
   hold off
 
   axis square;
-  %}
+  
 
   drawnow;
 
