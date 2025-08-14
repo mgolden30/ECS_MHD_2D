@@ -10,9 +10,9 @@ imagesc(dist);
 axis square;
 set(gca, "ydir", "normal");
 colorbar();
-clim([0,1]);
+clim([0,1.0]);
 colormap jet;
-
+ 
 
 %%
 % Prepare the new file.
@@ -26,13 +26,14 @@ for i = 1:size(fs,1)
   clf;
   tiledlayout(1,2);
   vis( squeeze(fs(i,:,:,:)) );
+  title(i, "color", "w");
   drawnow;
 
   %saveas(gcf, sprintf("frames/%03d.png", i) );
   % Write each frame to the file.
   currFrame = getframe(gcf);
   writeVideo(vidObj,currFrame);
-end  
+end
 % Close the file.
 close(vidObj);
 
@@ -48,6 +49,9 @@ idx = [170, 182];
 idx = [101, 110];
 idx = [67, 91];
 idx = [90, 108];
+idx = [88,120];
+idx = [160, 190];
+idx = [98, 132];
 
 dt = 1/256;
 ministeps = 64;
@@ -62,13 +66,13 @@ end
 
 %%
 
-n = 256*2;
+n = 256;
 k = 0:n-1;
 k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 144;%64; %30
+frames = 512;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i
@@ -90,14 +94,14 @@ j_sq(end+1) = j_sq(1);
 back_color = "k";
 text_color = "w";
 
-make_gif = true;
+make_gif = false;
 figure(1);
 set(gcf, "color", back_color);
 
 
 % Prepare the new file.
-    vidObj = VideoWriter('peaks.avi');
-    open(vidObj);
+%vidObj = VideoWriter('peaks.avi');
+%open(vidObj);
 
 while(true)
 for i = 1:4:frames
@@ -140,12 +144,12 @@ for i = 1:4:frames
     saveas(gcf, sprintf("frames/%03d.png", i) );
   end
  % Write each frame to the file.
-       currFrame = getframe(gcf);
-       writeVideo(vidObj,currFrame);
+  %     currFrame = getframe(gcf);
+  %     writeVideo(vidObj,currFrame);
     end
   
     % Close the file.
-    close(vidObj);
+   % close(vidObj);
 
 if make_gif
   break;
