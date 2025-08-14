@@ -17,7 +17,7 @@ dt = 1/256
 ministeps = 32*2
 precision = jnp.float64
 
-transient_steps = 4*512*2*4
+transient_steps = 4*512*2*4*2
 steps = 256
 
 nu  = 1/50

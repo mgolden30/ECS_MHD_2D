@@ -28,11 +28,9 @@ input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_40.npz")
 input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_792.npz")
 input_dict, param_dict = dictionaryIO.load_dicts("newton/20.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/1.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE2.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("high_res.npz")
 
-
-#input_dict, param_dict = dictionaryIO.load_dicts("Re40/RPO1.npz")
 
 
 #Define the RPO objective function and compile it
@@ -72,7 +70,7 @@ _ = hessian_fn(input_dict, f)
 ######################################
 
 maxit = 1024
-inner = 64
+inner = 512
 outer = 1
 
 damp = 0.1

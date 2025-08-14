@@ -15,14 +15,15 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE5.npz") #_multi.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re50/2.npz")
 
 f = input_dict['fields']
 
 if f.ndim == 4:
     #Restrict to single shooting
     f = f[0,...]
+
+print(f"Using fixed timesteps = {param_dict['steps']}")
 
 @jax.jit
 def forward(f):
@@ -57,7 +58,7 @@ data = loadmat("floquet.mat")
 tang = data["tang"]
 
 #How many times should we do power iteration?
-maxit = 32
+maxit = 2
 for i in range(maxit):
     print(tang.shape)
 

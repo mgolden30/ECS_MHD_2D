@@ -3,6 +3,9 @@ Visualize the Floquest spectrum of an RPO.
 %}
 
 clear;
+set(gcf,"color","w");
+set(0, 'DefaultAxesXColor', 'k')        % X axis in white
+set(0, 'DefaultAxesYColor', 'k')   
 
 load("../floquet.mat");
 

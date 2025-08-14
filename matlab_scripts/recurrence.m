@@ -47,7 +47,7 @@ idx = [189, 200];
 idx = [170, 182];
 idx = [101, 110];
 idx = [67, 91];
-
+idx = [90, 108];
 
 dt = 1/256;
 ministeps = 64;
@@ -62,13 +62,13 @@ end
 
 %%
 
-n = 256;
+n = 256*2;
 k = 0:n-1;
 k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 192;%64; %30
+frames = 144;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i
@@ -87,9 +87,18 @@ j_sq(end+1) = j_sq(1);
 
 %%
 
-make_gif = false;
+back_color = "k";
+text_color = "w";
+
+make_gif = true;
 figure(1);
-set(gcf, "color", "k");
+set(gcf, "color", back_color);
+
+
+% Prepare the new file.
+    vidObj = VideoWriter('peaks.avi');
+    open(vidObj);
+
 while(true)
 for i = 1:4:frames
   i
@@ -105,26 +114,38 @@ for i = 1:4:frames
   tiledlayout(1,3);
   vis(f);
 
-  colormap blueblackred
+  if back_color == "w"
+    colormap bluewhitered
+  else
+    colormap blueblackred
+  end
 
   nexttile
-  plot( w_sq, j_sq, "Color", "black" );
+  plot( w_sq, j_sq, "Color", text_color, 'linewidth', 2 );
   xlabel("$\langle \omega^2 \rangle$", "Interpreter", "latex" , "fontsize", 32  );
   ylabel("$\langle j^2 \rangle$", "Interpreter", "latex", "fontsize", 32 ,"rotation", 0);
   
   hold on
-    scatter( w_sq(i), j_sq(i), 'o', 'filled', 'MarkerFaceColor', 'red' );
+  ms = 100;
+    scatter( w_sq(i), j_sq(i), ms, 'o', 'filled', 'MarkerFaceColor', 'red' );
   hold off
-
+  set(0, 'DefaultAxesXColor', text_color)        % X axis in white
+  set(0, 'DefaultAxesYColor', text_color)   
+  set(gca, 'color', back_color);
   axis square;
   
 
   drawnow;
-
   if make_gif
     saveas(gcf, sprintf("frames/%03d.png", i) );
   end
-end
+ % Write each frame to the file.
+       currFrame = getframe(gcf);
+       writeVideo(vidObj,currFrame);
+    end
+  
+    % Close the file.
+    close(vidObj);
 
 if make_gif
   break;
@@ -135,11 +156,12 @@ end
 
 function vis(f)
   fs = 32;
-  R = 2;
+  R = 1;
 
   nexttile
   data = squeeze(f(1,:,:)).';
   %imagesc( [data,data;data,data] );
+  %data = log10(abs(fftshift(fft2(data))));
   imagesc(data);
   axis square;
   clim([-10 10]*R);
@@ -149,6 +171,7 @@ function vis(f)
   nexttile
   data = squeeze(f(2,:,:)).';
   %imagesc( [data,data;data,data] );
+  %data = log10(abs(fftshift(fft2(data))));
   imagesc(data);
   axis square;
   clim([-10 10]*R);

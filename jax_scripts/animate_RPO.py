@@ -17,17 +17,17 @@ if (precision == jnp.float64):
 
 # By = 1.0, Re = 100
 input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE5.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re50/1.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re50/2.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_336.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("newton/3.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_12608.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("high_res.npz")
 
 f = input_dict['fields']
-T = input_dict['T']
+T = 2*input_dict['T']
 sx= input_dict['sx']
 
-steps = param_dict['steps']
+steps = 2*param_dict['steps']
 dt = T/steps
 
 
