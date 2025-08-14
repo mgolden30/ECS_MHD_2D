@@ -78,8 +78,8 @@ def gmres(A, b, m, s_min, tol=1e-8, preconditioner_list=[], output_index=0 ):
         b2 = b2 * inv_s
         y  = Vh.T @ b2
         
-    #filename = f"gmres_debug_{output_index}.mat"
-    #savemat(filename, {"H": H, "b": b2, "f": b, "Q": Q})
+    filename = f"gmres_debug_{output_index}.mat"
+    savemat(filename, {"H": H, "b": b2, "f": b, "Q": Q})
 
     x = Q[:, :m] @ y
 
