@@ -32,9 +32,9 @@ import lib.utils as utils
 precision = jnp.float64
 filename = "turb.npz" #Set to "turb.npz" for a new state or "data/adjoint_descent_8.npz" for example if you want to restart optimization for an old state
 #filename = "data/adjoint_descent_224.npz" 
-filename = "newton/2.npz"
 #filename = "high_res.npz"
-idx = [90, 108] #If filename == "turb.npz", then these will determine the initial guess of the RPO from turbulence 
+idx = [88, 120] #If filename == "turb.npz", then these will determine the initial guess of the RPO from turbulence 
+idx = [98, 132]
 lr = 1e-2 #Learning rate of ADAM
 maxit = 16*1024 #Maximum number of ADAM steps
 save_every = 64 #Save the fluid state after this many ADAM steps.
@@ -121,7 +121,7 @@ for t in range(maxit):
     input_dict['fields'] = f
 
     #Print diagnostics
-    print(f"{t}: loss={loss:.6f}, walltime={walltime:.3f}, T={input_dict['T']:.3f}, sx={input_dict['sx']:.3f}, completed={info["completed"]}, fevals={info["fevals"]}, accepted={info["accepted"]}, rejected={info["rejected"]}")
+    print(f"{t}: loss={loss:.6f}, walltime={walltime:.3f}, T={input_dict['T']:.3f}, sx={input_dict['sx']:.3f}, completed={info['completed']}, fevals={info['fevals']}, accepted={info['accepted']}, rejected={info['rejected']}")
 
     #Save the state every so often
     if ( t % save_every == 0 ):

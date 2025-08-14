@@ -16,10 +16,10 @@ if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
 # By = 1.0, Re = 100
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE5.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re50/2.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_336.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("newton/2.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE5.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re50/2.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_640.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("newton/20.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_12608.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("high_res.npz")
 
