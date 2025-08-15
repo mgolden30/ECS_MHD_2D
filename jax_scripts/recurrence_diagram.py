@@ -17,11 +17,11 @@ dt = 1/256
 ministeps = 32*2
 precision = jnp.float64
 
-transient_steps = 3*4*512*2*4*2
+transient_steps = 4*512*2*4*2
 steps = 256
 
-nu  = 1/50
-eta = 1/50
+nu  = 1/200
+eta = 1/200
 b0  = [0.0, 0.1] # Mean magnetic field
 
 # If you want double precision, change JAX defaults
@@ -49,7 +49,7 @@ f = jnp.zeros([2, n, n], dtype=precision)
 #f = f.at[1, :, :].set( jnp.cos(3*x+2.1)*jnp.sin(y+3.5) - jnp.cos(1-x) + jnp.sin(x + 5*y - 1 ) )
 
 
-key = jax.random.PRNGKey(seed=0)
+key = jax.random.PRNGKey(seed=1)
 f = 10*jax.random.normal( key, shape=[2,n,n] )
 
 #fft the data before we evolve
