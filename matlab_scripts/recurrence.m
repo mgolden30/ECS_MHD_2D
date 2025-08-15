@@ -14,6 +14,8 @@ clim([0,1.0]);
 colormap jet;
  
 
+
+
 %%
 % Prepare the new file.
 vidObj = VideoWriter('turbulence.avi');
@@ -51,6 +53,8 @@ idx = [90, 108];
 idx = [88,120];
 idx = [160, 190];
 idx = [192, 204];
+idx = [45, 123];
+idx = [9, 39];
 
 dt = 1/256;
 ministeps = 64;
@@ -71,7 +75,7 @@ k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 95;%64; %30
+frames = 88;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i
@@ -99,11 +103,11 @@ set(gcf, "color", back_color);
 
 
 % Prepare the new file.
-vidObj = VideoWriter('peaks.avi');
-open(vidObj);
+%vidObj = VideoWriter('peaks.avi');
+%open(vidObj);
 
 while(true)
-for i = 1:2:frames
+for i = 1:4:frames
   i
   %data = load("../traj/" + i + ".mat");
 
@@ -143,12 +147,12 @@ for i = 1:2:frames
     saveas(gcf, sprintf("frames/%03d.png", i) );
   end
  % Write each frame to the file.
-       currFrame = getframe(gcf);
-       writeVideo(vidObj,currFrame);
+     %  currFrame = getframe(gcf);
+     %  writeVideo(vidObj,currFrame);
     end
   
     % Close the file.
-    close(vidObj);
+    %close(vidObj);
 
 if make_gif
   break;
@@ -159,7 +163,7 @@ end
 
 function vis(f)
   fs = 32;
-  R = 1;
+  R = 2;
 
   nexttile
   data = squeeze(f(1,:,:)).';
