@@ -8,6 +8,8 @@ set(0, 'DefaultAxesXColor', 'k')        % X axis in white
 set(0, 'DefaultAxesYColor', 'k')   
 
 load("../floquet.mat");
+load("../solutions/Re50/floquet/1.mat");
+
 
 tiledlayout(2,2);
 
@@ -57,7 +59,9 @@ return;
 
 tiledlayout(1,2);
 
-k = 1;
+tang = reshape(tang, [32,2,256,256]);
+
+k = 3;
 
 for i = 1:2
   nexttile

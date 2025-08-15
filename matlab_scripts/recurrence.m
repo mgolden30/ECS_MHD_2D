@@ -26,11 +26,10 @@ for i = 1:size(fs,1)
   clf;
   tiledlayout(1,2);
   vis( squeeze(fs(i,:,:,:)) );
-  title(i, "color", "w");
   drawnow;
 
   %saveas(gcf, sprintf("frames/%03d.png", i) );
-  % Write each frame to the file.
+  %Write each frame to the file.
   currFrame = getframe(gcf);
   writeVideo(vidObj,currFrame);
 end
@@ -51,7 +50,7 @@ idx = [67, 91];
 idx = [90, 108];
 idx = [88,120];
 idx = [160, 190];
-idx = [98, 132];
+idx = [192, 204];
 
 dt = 1/256;
 ministeps = 64;
@@ -72,7 +71,7 @@ k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 512;%64; %30
+frames = 95;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i
@@ -100,11 +99,11 @@ set(gcf, "color", back_color);
 
 
 % Prepare the new file.
-%vidObj = VideoWriter('peaks.avi');
-%open(vidObj);
+vidObj = VideoWriter('peaks.avi');
+open(vidObj);
 
 while(true)
-for i = 1:4:frames
+for i = 1:2:frames
   i
   %data = load("../traj/" + i + ".mat");
 
@@ -144,12 +143,12 @@ for i = 1:4:frames
     saveas(gcf, sprintf("frames/%03d.png", i) );
   end
  % Write each frame to the file.
-  %     currFrame = getframe(gcf);
-  %     writeVideo(vidObj,currFrame);
+       currFrame = getframe(gcf);
+       writeVideo(vidObj,currFrame);
     end
   
     % Close the file.
-   % close(vidObj);
+    close(vidObj);
 
 if make_gif
   break;

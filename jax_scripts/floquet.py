@@ -58,7 +58,7 @@ data = loadmat("floquet.mat")
 tang = data["tang"]
 
 #How many times should we do power iteration?
-maxit = 2
+maxit = 8
 for i in range(maxit):
     print(tang.shape)
 
