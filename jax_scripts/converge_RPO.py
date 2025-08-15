@@ -33,7 +33,7 @@ precision = jnp.float64
 filename = "turb.npz" #Set to "turb.npz" for a new state or "data/adjoint_descent_8.npz" for example if you want to restart optimization for an old state
 #filename = "data/adjoint_descent_224.npz" 
 #filename = "high_res.npz"
-idx = [192, 204] #If filename == "turb.npz", then these will determine the initial guess of the RPO from turbulence 
+idx = [9, 39] #If filename == "turb.npz", then these will determine the initial guess of the RPO from turbulence 
 lr = 1e-2 #Learning rate of ADAM
 maxit = 16*1024 #Maximum number of ADAM steps
 save_every = 64 #Save the fluid state after this many ADAM steps.
@@ -57,12 +57,12 @@ if(precision == jnp.float64):
 
 if filename == "turb.npz":
     #A turbulent trajectory computed with recurrence_diagram.py
-    print("Creating new RPO guess from {filename}...")
+    print(f"Creating new RPO guess from {filename}...")
     turb_dict,  param_dict = dictionaryIO.load_dicts(filename)
     input_dict, param_dict = utils.create_state_from_turb(turb_dict, idx, param_dict)
 elif os.path.isfile(filename):
     #Alternatively, load a state you have previously converged
-    print("Loading existing state from {filename}...")
+    print(f"Loading existing state from {filename}...")
     input_dict, param_dict = dictionaryIO.load_dicts(filename)
 else:
     print(f"Error: Your specified filename = {filename} could not be opened.")
