@@ -1,50 +1,101 @@
-# ECS_MHD_2D
+<div align="center">
 
-Python code to find Exact Coherent Structures (ECS) in 2D Magnetohydrodynamics (MHD)
+# 🌊 ECS_MHD_2D
 
-# Setting up the environment
+### Exact Coherent Structures in 2D Magnetohydrodynamics
 
-All convergence is critically dependent on JAX. To install, do one of the following.
+*A Python implementation for finding Exact Coherent Structures (ECS) in 2D MHD using JAX*
 
-1. Try to use my snapshot environment.yml provided here.
-$ conda env create -f environment.yml
+[![Python](https://img.shields.io/badge/Python-3.13-blue.svg)](https://www.python.org/)
+[![JAX](https://img.shields.io/badge/JAX-GPU%20Accelerated-orange.svg)](https://jax.readthedocs.io/)
+[![CUDA](https://img.shields.io/badge/CUDA-12.x-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 
-2. Replicate my simple installation process.
-$ conda create -n ECS_MHD python=3.13
-$ conda activate ECS_MHD
-$ pip install -U "jax[cuda12]"
-$ pip install matplotlib
+</div>
 
-This assumes your CUDA drivers are version 12.x. Consult the JAX documentation if this does not apply to you.
-Of course, the code runs significantly faster on a GPU, but a GPU is not explicitly required. You can run these scripts on CPU only.
+---
 
-# Tutorial
+## 📋 Table of Contents
 
-All python code is expected to be ran from this directory. For example,
+- [🚀 Quick Start](#-quick-start)
+- [⚙️ Environment Setup](#️-environment-setup)
+- [📖 Tutorial](#-tutorial)
+- [🎯 MATLAB Visualization](#-matlab-visualization)
+- [🔧 Troubleshooting](#-troubleshooting)
+- [📚 Additional Resources](#-additional-resources)
 
+---
+
+## 🚀 Quick Start
+
+This repository provides tools for hunting Relative Periodic Orbits (RPOs) in 2D magnetohydrodynamics. All Python scripts should be executed from the root directory.
+
+```bash
 python jax_scripts/newton.py
-
-
-Roughly speaking, hunting for Relative Periodic Orbits can be done with the following steps.
-1. Generate a turbulent dataset using
-```
-$ python jax_scripts/generate_turbulence.py
 ```
 
-on my machine, I get the following output:
+---
+
+## ⚙️ Environment Setup
+
+> **⚠️ Important:** All convergence is critically dependent on JAX installation.
+
+### Option 1: Use Provided Environment (Recommended)
+
+```bash
+conda env create -f environment.yml
+```
+
+### Option 2: Manual Installation
+
+```bash
+# Create and activate conda environment
+conda create -n ECS_MHD python=3.13
+conda activate ECS_MHD
+
+# Install JAX with CUDA support
+pip install -U "jax[cuda12]"
+
+# Install additional dependencies
+pip install matplotlib
+```
+
+> **💡 Note:** This assumes CUDA drivers version 12.x. Consult the [JAX documentation](https://jax.readthedocs.io/) for other versions.
+
+**GPU vs CPU:** While the code runs significantly faster on GPU, it can also run on CPU-only systems.
+
+---
+
+## 📖 Tutorial
+
+### Step 1: Generate Turbulent Dataset 🌪️
+
+Start by creating turbulent data:
+
+```bash
+python jax_scripts/generate_turbulence.py
+```
+
+**Expected output:**
 ```
 Transient of 8192 steps took 7.515015125274658 second...
 Generating 256 steps of turbulence took 14.76011872291565 seconds.
 Recurrence diagram computed in 2.2505459785461426 seconds
 ```
-You can edit this script to change parameters of the flow and numerical grid. 
 
-2. Make an initial guess at an RPO (even a bad guess is okay). You do this by specifying the array idx=[initial,final] (MATLAB indexing!) in jax_scripts/adjoint_descent.py.
-Once you have an initial guess, run
+> **📝 Customization:** Edit this script to modify flow parameters and numerical grid settings.
+
+### Step 2: Create Initial RPO Guess 🎯
+
+Make an initial guess at a Relative Periodic Orbit:
+
+1. Specify the array `idx=[initial,final]` (MATLAB indexing!) in `jax_scripts/adjoint_descent.py`
+2. Run the adjoint descent:
+
+```bash
+python jax_scripts/adjoint_descent.py
 ```
-$ python jax_scripts/adjoint_descent.py
-```
-My machine outputs the following:
+
+**Expected output:**
 ```
 Creating new RPO guess from temp_data/turb.npz...
 using 1088 timesteps of type <class 'int'> 
@@ -57,12 +108,18 @@ using 1088 timesteps of type <class 'int'>
 6: loss=1.405015, walltime=1.483, T=4.320, sx=0.068, completed=True, fevals=833, accepted=194, rejected=14
 ```
 
-3. Once the error is sufficiently small (whatever that means to you), we can fine tune the state with Newton-GMRES. Edit jax_scripts/newton.py to tell it which file to load in and run
-```
-$ python jax_scripts/newton.py
+### Step 3: Fine-tune with Newton-GMRES 🔬
+
+Once the error is sufficiently small, refine the solution:
+
+1. Edit `jax_scripts/newton.py` to specify the input file
+2. Execute the Newton method:
+
+```bash
+python jax_scripts/newton.py
 ```
 
-My machine outputs the following:
+**Expected output:**
 ```
 [CudaDevice(id=0)]
 Choosing single shooting with adaptive timestepping:
@@ -74,9 +131,59 @@ Iteration 1: rel_err=1.708e-01, |f|=1.134e+02, fwall=0.232, gmreswall=29.471, gm
 Iteration 2: rel_err=1.223e-01, |f|=8.101e+01, fwall=0.235, gmreswall=28.989, gmres_rel_res=1.211e-02, damp=1.000e+00, T=4.628e+00, sx=1.504e-01
 ```
 
-Happy hunting!
+🎉 **Happy hunting!**
 
-# MATLAB Visualization
+---
 
-I prefer MATLAB for data visualization, so matlab_scripts is full of various code for visualizing the state. It is not required by any means, but it is how I use this code.
-See matlab_scripts/recurrence.m to look at a nice recurrence diagram and animate turbulence.
+## 🎯 MATLAB Visualization
+
+For enhanced data visualization, MATLAB scripts are provided in the `matlab_scripts/` directory.
+
+**Key Features:**
+- Recurrence diagrams
+- Turbulence animation
+- State visualization tools
+
+**Getting Started:**
+```matlab
+% View recurrence diagram and animate turbulence
+matlab_scripts/recurrence.m
+```
+
+> **📌 Note:** MATLAB visualization is optional but provides powerful analysis tools.
+
+---
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| JAX installation fails | Check CUDA version compatibility |
+| GPU not detected | Verify CUDA drivers and JAX installation |
+| Slow convergence | Ensure GPU acceleration is enabled |
+| Memory errors | Reduce grid size or batch size |
+
+### Performance Tips
+
+- ✅ Use GPU when available
+- ✅ Verify JAX detects your GPU: `jax.devices()`
+- ✅ Monitor memory usage during large simulations
+
+---
+
+## 📚 Additional Resources
+
+- 📖 [JAX Documentation](https://jax.readthedocs.io/)
+- 🔧 [CUDA Installation Guide](https://developer.nvidia.com/cuda-downloads)
+- 🧮 [NumPy Documentation](https://numpy.org/doc/)
+- 📊 [Matplotlib Gallery](https://matplotlib.org/stable/gallery/)
+
+---
+
+<div align="center">
+
+*Built with ❤️ for computational fluid dynamics research*
+
+</div>
