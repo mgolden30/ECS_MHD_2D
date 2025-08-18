@@ -18,7 +18,7 @@ $ pip install matplotlib
 This assumes your CUDA drivers are version 12.x. Consult the JAX documentation if this does not apply to you.
 Of course, the code runs significantly faster on a GPU, but a GPU is not explicitly required. You can run these scripts on CPU only.
 
-# How to use
+# Tutorial
 
 All python code is expected to be ran from this directory. For example,
 
@@ -76,3 +76,7 @@ Iteration 2: rel_err=1.223e-01, |f|=8.101e+01, fwall=0.235, gmreswall=28.989, gm
 
 Happy hunting!
 
+# MATLAB Visualization
+
+I prefer MATLAB for data visualization, so matlab_scripts is full of various code for visualizing the state. It is not required by any means, but it is how I use this code.
+See matlab_scripts/recurrence.m to look at a nice recurrence diagram and animate turbulence.
