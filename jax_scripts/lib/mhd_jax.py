@@ -54,7 +54,6 @@ def construct_domain(n: int, data_type):
     # Integer wavenumbers 0,1,...n/2, -n/2+1, ..., -1
     k = jnp.fft.fftfreq(n, d=1/n, dtype=data_type)
 
-    # Check that fftfreq doesn't fuck up the precision of k
     if data_type == jnp.float64:
         assert (jnp.abs(k[1] - 1) < 1e-12)
 
