@@ -107,6 +107,8 @@ using 1088 timesteps of type <class 'int'>
 5: loss=1.510585, walltime=1.655, T=4.310, sx=0.059, completed=True, fevals=1069, accepted=198, rejected=69
 6: loss=1.405015, walltime=1.483, T=4.320, sx=0.068, completed=True, fevals=833, accepted=194, rejected=14
 ```
+This script will effectively run until user-terminated. The state is only saved every 64 steps in temp_data/adjoint_descent.
+
 
 ### Step 3: Fine-tune with Newton-GMRES 🔬
 
@@ -129,6 +131,12 @@ Transpose walltime = 1.235
 Iteration 0: rel_err=3.308e-01, |f|=2.195e+02, fwall=0.222, gmreswall=30.739, gmres_rel_res=2.011e-02, damp=1.000e+00, T=4.602e+00, sx=1.218e-01
 Iteration 1: rel_err=1.708e-01, |f|=1.134e+02, fwall=0.232, gmreswall=29.471, gmres_rel_res=1.022e-03, damp=1.000e+00, T=4.601e+00, sx=1.379e-01
 Iteration 2: rel_err=1.223e-01, |f|=8.101e+01, fwall=0.235, gmreswall=28.989, gmres_rel_res=1.211e-02, damp=1.000e+00, T=4.628e+00, sx=1.504e-01
+```
+This script will effectively run until user-terminated.
+
+If you want to visualize a particular solution, use jax_scripts/animate.py.
+```bash
+python jax_scripts/animate.py
 ```
 
 🎉 **Happy hunting!**
