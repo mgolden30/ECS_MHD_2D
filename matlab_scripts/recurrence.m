@@ -1,9 +1,10 @@
 clear;
 
-load("../dist.mat");
+load("../temp_data/dist.mat");
 
 clf;
-  set(0, 'DefaultAxesXColor', 'k')        % X axis in white
+set(gcf, "color", "w");
+set(0, 'DefaultAxesXColor', 'k')        % X axis in white
   set(0, 'DefaultAxesYColor', 'k') 
 dist = dist / mean(abs(dist), "all");
 imagesc(dist);
@@ -13,7 +14,6 @@ set(gca, "ydir", "normal");
 colorbar();
 clim([0,1.0]);
 colormap jet;
- 
 
 
 
@@ -25,7 +25,7 @@ open(vidObj);
 
 
 set(gcf, "color", "black");
-for i = 178:188%1:size(fs,1)
+for i = 1:size(fs,1)
   clf;
   tiledlayout(1,2);
   vis( squeeze(fs(i,:,:,:)) );
@@ -40,23 +40,8 @@ end
 close(vidObj);
 
 
-%%
-idx = [349, 365];
-idx = [195, 228];
-idx = [118, 132];
-idx = [58, 88];
-idx = [100, 112];
-idx = [189, 200];
-idx = [170, 182];
-idx = [101, 110];
-idx = [67, 91];
-idx = [90, 108];
-idx = [88,120];
-idx = [160, 190];
-idx = [192, 204];
-idx = [45, 123];
-idx = [9, 39];
-idx = [8,37];
+%% Look at a pair of points in the timeseries
+idx = [203, 220];
 
 dt = 1/256;
 ministeps = 64;
