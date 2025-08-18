@@ -62,7 +62,7 @@ k(k>n/2) = k(k>n/2) - n;
 k = reshape(k, 1, []);
 
 %Load all the frames before animating
-frames = 88;%64; %30
+frames = 126;%64; %30
 fs = zeros(2,n,n,frames);
 for i = 1:frames
   i
@@ -84,7 +84,7 @@ j_sq(end+1) = j_sq(1);
 back_color = "k";
 text_color = "w";
 
-make_gif = false;
+make_gif = true;
 figure(1);
 set(gcf, "color", back_color);
 
@@ -94,7 +94,8 @@ set(gcf, "color", back_color);
 %open(vidObj);
 
 while(true)
-for i = 1:4:frames
+a = 1;
+for i = 1:2:frames
   i
   %data = load("../traj/" + i + ".mat");
 
@@ -105,7 +106,7 @@ for i = 1:4:frames
   f = real(ifft(f, [], 2));
 
   clf;
-  tiledlayout(1,3);
+  tiledlayout(1,2);
   vis(f);
 
   if back_color == "w"
@@ -113,7 +114,7 @@ for i = 1:4:frames
   else
     colormap blueblackred
   end
-
+  %{
   nexttile
   plot( w_sq, j_sq, "Color", text_color, 'linewidth', 2 );
   xlabel("$\langle \omega^2 \rangle$", "Interpreter", "latex" , "fontsize", 32  );
@@ -127,11 +128,13 @@ for i = 1:4:frames
   set(0, 'DefaultAxesYColor', text_color)   
   set(gca, 'color', back_color);
   axis square;
-  
+  %}
 
   drawnow;
   if make_gif
-    saveas(gcf, sprintf("frames/%03d.png", i) );
+    %saveas(gcf, s);
+    exportgraphics(gcf, sprintf("frames/%03d.png", a), 'BackgroundColor', 'current')
+    a = a+1;
   end
  % Write each frame to the file.
      %  currFrame = getframe(gcf);
