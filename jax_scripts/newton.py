@@ -26,12 +26,12 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_384.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_256.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re50/2.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("high_res.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("temp.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("newton/3.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("newton/100.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_12608.npz")
 
 
@@ -52,11 +52,11 @@ num_checkpoints = 32 #for fixed timestep integration. Modify the adaptive_dict f
 
 use_transpose = True   #Boolean. False solves Ax=b. True solves A^T A x = A^T b
 s_min = 0 #What is the smallest singular value you are comfortable inverting. If s_min=0, you just compute the lstsq solution.
-maxit = 128 #Max iterations
-inner = 32 #Krylov subspace dimension
+maxit = 32 #Max iterations
+inner = 256 #Krylov subspace dimension
 outer = 1 #How many times should we restart GMRES? Only do restarts if you literally can't fit a larger Krylov subsapce in memory.
 do_line_search = True #When we have a Newton step, should we do a line search in that direction?
-default_damp  = 0.1 #if you don't do a line search, then damp the newton step with this
+default_damp  = 0.15 #if you don't do a line search, then damp the newton step with this
 
 
 
