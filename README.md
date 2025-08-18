@@ -27,7 +27,9 @@ python jax_scripts/newton.py
 
 Roughly speaking, hunting for Relative Periodic Orbits can be done with the following steps.
 1. Generate a turbulent dataset using
+```
 $ python jax_scripts/generate_turbulence.py
+```
 
 on my machine, I get the following output:
 ```
@@ -39,12 +41,26 @@ You can edit this script to change parameters of the flow and numerical grid.
 
 2. Make an initial guess at an RPO (even a bad guess is okay). You do this by specifying the array idx=[initial,final] (MATLAB indexing!) in jax_scripts/adjoint_descent.py.
 Once you have an initial guess, run
+```
 $ python jax_scripts/adjoint_descent.py
+```
+My machine outputs the following:
+```
+Creating new RPO guess from temp_data/turb.npz...
+using 1088 timesteps of type <class 'int'> 
+0: loss=2.239609, walltime=3.824, T=4.260, sx=0.010, completed=True, fevals=1085, accepted=201, rejected=70
+1: loss=2.062645, walltime=1.739, T=4.270, sx=0.020, completed=True, fevals=1181, accepted=206, rejected=89
+2: loss=1.903478, walltime=1.714, T=4.280, sx=0.030, completed=True, fevals=1153, accepted=204, rejected=84
+3: loss=1.759379, walltime=1.694, T=4.290, sx=0.040, completed=True, fevals=1125, accepted=202, rejected=79
+4: loss=1.628692, walltime=1.676, T=4.300, sx=0.050, completed=True, fevals=1097, accepted=200, rejected=74
+5: loss=1.510585, walltime=1.655, T=4.310, sx=0.059, completed=True, fevals=1069, accepted=198, rejected=69
+6: loss=1.405015, walltime=1.483, T=4.320, sx=0.068, completed=True, fevals=833, accepted=194, rejected=14
+```
 
-My machine takes 1.45 seconds per adjoint descent step.
-
-3. Once the error is sufficiently small, we can fine tune the state with Newton-GMRES. Edit jax_scripts/newton.py to tell it which file to load in and run
+3. Once the error is sufficiently small (whatever that means to you), we can fine tune the state with Newton-GMRES. Edit jax_scripts/newton.py to tell it which file to load in and run
+```
 $ python jax_scripts/newton.py
+```
 
 My machine outputs the following:
 ```
