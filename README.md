@@ -16,19 +16,16 @@
   <img src="figures/example.gif" alt="Demo animation" width="500"/>
 </p>
 
----
-
+<!--
 ## Table of Contents
-
 - [Quick Start](#-quick-start)
 - [Environment Setup](#️-environment-setup)
 - [Tutorial](#-tutorial)
 - [MATLAB Visualization](#-matlab-visualization)
 - [Troubleshooting](#-troubleshooting)
 - [Additional Resources](#-additional-resources)
-
+-->
 ---
-
 ## Quick Start
 
 This repository provides tools for hunting Relative Periodic Orbits (RPOs) in 2D magnetohydrodynamics. All Python scripts should be executed from the root directory.
@@ -40,8 +37,6 @@ python jax_scripts/newton.py
 ---
 
 ## Environment Setup
-
-> **⚠️ Important:** All convergence is critically dependent on JAX installation.
 
 ### Option 1: Use Provided Environment (Recommended)
 
@@ -142,42 +137,8 @@ python jax_scripts/animate.py
 
 **Happy hunting!**
 
----
-
-## MATLAB Visualization
-
-For enhanced data visualization, MATLAB scripts are provided in the `matlab_scripts/` directory.
-
-**Key Features:**
-- Recurrence diagrams
-- Turbulence animation
-- State visualization tools
-
-**Getting Started:**
-```matlab
-% View recurrence diagram and animate turbulence
-matlab_scripts/recurrence.m
-```
-
-> ** Note:** MATLAB visualization is optional but provides powerful analysis tools.
-
----
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-| Issue | Solution |
-|-------|----------|
-| JAX installation fails | Check CUDA version compatibility |
-| GPU not detected | Verify CUDA drivers and JAX installation |
-| Slow convergence | Ensure GPU acceleration is enabled |
-| Memory errors | Reduce grid size or batch size |
-
----
 
 <div align="center">
 
-*Built with ❤️ for computational fluid dynamics research*
 
 </div>
