@@ -26,13 +26,8 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_256.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re100/RPO_CLOSE_multi.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re50/2.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("high_res.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("temp.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("newton/100.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("data/adjoint_descent_12608.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("temp_data/adjoint_descent/64.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re50/candidate4.npz")
 
 
 
@@ -50,18 +45,16 @@ adaptive_dict = {
 }
 num_checkpoints = 32 #for fixed timestep integration. Modify the adaptive_dict for adaptive timestepping
 
-use_transpose = True   #Boolean. False solves Ax=b. True solves A^T A x = A^T b
-s_min = 0 #What is the smallest singular value you are comfortable inverting. If s_min=0, you just compute the lstsq solution.
-maxit = 32 #Max iterations
-inner = 256 #Krylov subspace dimension
-outer = 1 #How many times should we restart GMRES? Only do restarts if you literally can't fit a larger Krylov subsapce in memory.
+use_transpose = True  #False solves Ax=b. True solves A^T A x = A^T b
+s_min = 0    #What is the smallest singular value you are comfortable inverting. If s_min=0, you just compute the lstsq solution.
+maxit = 1024 #Max iterations
+inner = 16   #Krylov subspace dimension
+outer = 1    #How many times should we restart GMRES? Only do restarts if you literally can't fit a larger Krylov subsapce in memory.
+
 do_line_search = True #When we have a Newton step, should we do a line search in that direction?
-default_damp  = 0.15 #if you don't do a line search, then damp the newton step with this
+default_damp  = 0.1 #if you don't do a line search, then damp the newton step with this
 
-
-
-
-
+residual_stuck = False #Changing this to True will overwrite the initial condition with the final condition in an attempt to unstuck the residual. Results may vary
 
 
 obj, param_dict = utils.choose_objective_fn( shooting_mode, integrate_mode, param_dict, num_checkpoints, adaptive_dict )
@@ -76,7 +69,8 @@ obj, jac = utils.compile_objective_and_Jacobian( input_dict, param_dict, obj )
 f = obj(input_dict)
 
 #Use this value to overwrite the initial data
-#input_dict['fields'] = f['fields']/(1.0 + 1.0/input_dict['T']) + input_dict['fields']
+if residual_stuck:
+    input_dict['fields'] = f['fields']/(1.0 + 1.0/input_dict['T']) + input_dict['fields']
 
 #Define a simple lambda for flattening dictionaries 
 flatten = lambda x: jax.flatten_util.ravel_pytree(x)[0]
@@ -165,4 +159,4 @@ for i in range(maxit):
     fields = jnp.fft.irfft2(fields)
     input_dict['fields'] = fields
 
-    dictionaryIO.save_dicts( f"newton/{i}", input_dict, param_dict )
+    dictionaryIO.save_dicts( f"temp_data/newton/{i}", input_dict, param_dict )

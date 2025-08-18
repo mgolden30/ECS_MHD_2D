@@ -157,7 +157,7 @@ def block_gmres(A, b, m, B, tol=1e-8, iteration=0):
                 Q = Q.at[:,a+s].set(Q[:,a+s] - h * Q[:,j])
         B = C
     #For debugging
-    savemat(f"debug/bgmres_{iteration}.mat", {"H": H, "Q": Q} )
+    #savemat(f"debug/bgmres_{iteration}.mat", {"H": H, "Q": Q} )
 
     #Project b onto the orthonormal basis
     b2 = Q.T @ b

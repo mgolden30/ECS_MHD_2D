@@ -10,9 +10,12 @@ git add jax_scripts/*.py
 git add jax_scripts/lib/*.py
 
 #Whatever Floquet thing I am studying
-git add floquet.mat
+#git add floquet.mat
 
-#Add all solutions
-git add solutions/Re100/*
+#Add all solutions or candidates
+git add solutions/*/*
 
-git add github_add.sh 
+#Update this script
+git add github_add.sh
+
+git add environment.yml
