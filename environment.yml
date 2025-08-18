@@ -66,4 +66,3 @@ dependencies:
       - python-dateutil==2.9.0.post0
       - scipy==1.16.1
       - six==1.17.0
-prefix: /home/mgolden30/miniconda3/envs/clean

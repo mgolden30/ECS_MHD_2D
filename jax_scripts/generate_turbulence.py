@@ -12,9 +12,10 @@ import lib.dictionaryIO as dictionaryIO
 
 from scipy.io import savemat
 
+import os
 
-
-
+os.makedirs( "temp_data/", exist_ok=True)
+os.makedirs( "figures/", exist_ok=True)
 
 ######################
 # DNS parameters

@@ -13,7 +13,9 @@ import lib.loss_functions as loss_functions
 from lib.linalg import gmres
 import lib.dictionaryIO as dictionaryIO
 import lib.utils as utils
+import os
 
+os.makedirs( "temp_data/newton", exist_ok=True)
 
 ###############################
 # Construct numerical grid
