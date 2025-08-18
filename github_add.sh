@@ -21,3 +21,4 @@ git add github_add.sh
 git add environment.yml
 git add README.md
 git add LICENSE
+git add .gitignore

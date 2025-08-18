@@ -23,6 +23,9 @@ import lib.adam as adam
 import lib.dictionaryIO as dictionaryIO
 import lib.utils as utils
 
+import os 
+
+os.makedirs( "temp_data/adjoint_descent", exist_ok=True)
 
 ###############################
 # PARAMETERS OF THIS SCRIPT.
