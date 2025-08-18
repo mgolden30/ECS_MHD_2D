@@ -33,7 +33,7 @@ precision = jnp.float64
 filename = "turb.npz" #Set to "turb.npz" for a new state or "data/adjoint_descent_8.npz" for example if you want to restart optimization for an old state
 #filename = "data/adjoint_descent_224.npz" 
 #filename = "high_res.npz"
-idx = [9, 39] #If filename == "turb.npz", then these will determine the initial guess of the RPO from turbulence 
+idx = [178, 188] #If filename == "turb.npz", then these will determine the initial guess of the RPO from turbulence 
 lr = 1e-2 #Learning rate of ADAM
 maxit = 16*1024 #Maximum number of ADAM steps
 save_every = 64 #Save the fluid state after this many ADAM steps.

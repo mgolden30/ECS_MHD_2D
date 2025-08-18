@@ -3,7 +3,8 @@ clear;
 load("../dist.mat");
 
 clf;
-
+  set(0, 'DefaultAxesXColor', 'k')        % X axis in white
+  set(0, 'DefaultAxesYColor', 'k') 
 dist = dist / mean(abs(dist), "all");
 imagesc(dist);
 %imagesc(dist/n/n);
@@ -24,7 +25,7 @@ open(vidObj);
 
 
 set(gcf, "color", "black");
-for i = 1:size(fs,1)
+for i = 178:188%1:size(fs,1)
   clf;
   tiledlayout(1,2);
   vis( squeeze(fs(i,:,:,:)) );
@@ -55,6 +56,7 @@ idx = [160, 190];
 idx = [192, 204];
 idx = [45, 123];
 idx = [9, 39];
+idx = [8,37];
 
 dt = 1/256;
 ministeps = 64;

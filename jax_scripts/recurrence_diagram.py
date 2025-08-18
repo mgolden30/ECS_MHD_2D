@@ -17,7 +17,7 @@ dt = 1/256
 ministeps = 32*2
 precision = jnp.float64
 
-transient_steps = 4*512*2*4*2
+transient_steps = 512*2*4*2
 steps = 256
 
 nu  = 1/50
@@ -48,8 +48,7 @@ f = jnp.zeros([2, n, n], dtype=precision)
 #f = f.at[0, :, :].set( jnp.cos(4*x-0.1)*jnp.sin(x+y-1.2) - jnp.sin(3*x-1)*jnp.cos(y-1) + 2*jnp.cos(2*x-1))
 #f = f.at[1, :, :].set( jnp.cos(3*x+2.1)*jnp.sin(y+3.5) - jnp.cos(1-x) + jnp.sin(x + 5*y - 1 ) )
 
-
-key = jax.random.PRNGKey(seed=2)
+key = jax.random.PRNGKey(seed=321)
 f = 10*jax.random.normal( key, shape=[2,n,n] )
 
 #fft the data before we evolve
@@ -110,10 +109,9 @@ plt.close()
 start = time.time()
 dist = jnp.zeros([steps, steps])
 for i in range(steps):
-    diff = fs - fs[i,:,:,:]    
-    diff = jnp.fft.irfft2(diff)
-
-    #diff = jnp.abs(fs) - jnp.abs(fs[i,:,:,:])    
+    #diff = fs - fs[i,:,:,:]    
+    #diff = jnp.fft.irfft2(diff)
+    diff = jnp.abs(fs) - jnp.abs(fs[i,:,:,:])    
     diff = jnp.reshape( diff, [steps, -1] ) #shape [steps, 2*n*n]
 
     dist = dist.at[:,i].set( jnp.linalg.vector_norm(diff, axis=1) )
