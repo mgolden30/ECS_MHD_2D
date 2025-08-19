@@ -12,7 +12,8 @@ import io
 import lib.mhd_jax as mhd_jax
 import lib.dictionaryIO as dictionaryIO
 
-filename = "temp_data/newton/5.npz"
+filename = "temp_data/newton/3.npz"
+#filename = "solutions/Re100b/1.npz"
 
 input_dict, param_dict = dictionaryIO.load_dicts(filename)
 
@@ -22,7 +23,6 @@ save_every = 32
 
 assert( steps % save_every == 0)
 print(f"Evolving this state with {steps} timesteps and saving every {save_every}. This gives {steps // save_every} frames...")
-
 
 # Load in the initial data
 f = input_dict['fields']
