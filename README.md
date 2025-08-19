@@ -26,15 +26,6 @@
 - [Additional Resources](#-additional-resources)
 -->
 ---
-## Quick Start
-
-This repository provides tools for hunting Relative Periodic Orbits (RPOs) in 2D magnetohydrodynamics. All Python scripts should be executed from the root directory.
-
-```bash
-python jax_scripts/newton.py
-```
-
----
 
 ## Environment Setup
 
@@ -77,6 +68,9 @@ Transient of 8192 steps took 7.515015125274658 second...
 Generating 256 steps of turbulence took 14.76011872291565 seconds.
 Recurrence diagram computed in 2.2505459785461426 seconds
 ```
+This creates two files. 
+temp_data/turb.npz stores all grid parameters and a bit of turbulence to intialize RPO guesses with.
+temp_data/dist.mat contains a recurrence diagram. This can be visualized in MATLAB or loaded into any python script with scipy.io.loadmat.
 
 ### Step 2: Create Initial RPO Guess
 
@@ -102,15 +96,15 @@ using 1088 timesteps of type <class 'int'>
 6: loss=1.405015, walltime=1.483, T=4.320, sx=0.068, completed=True, fevals=833, accepted=194, rejected=14
 ⋮
 ```
-This script will effectively run until user-terminated. The state is only saved every 64 steps in temp_data/adjoint_descent.
+This script will effectively run until user-terminated. The state is only saved every 64 steps in temp_data/adjoint_descent/.
 
 
 ### Step 3: Fine-tune with Newton-GMRES
 
-Once the error is sufficiently small, refine the solution:
+Once the error is sufficiently small, refine the solution with Newton-Raphson iteration:
 
 1. Edit `jax_scripts/newton.py` to specify the input file
-2. Execute the Newton method:
+2. Run the script
 
 ```bash
 python jax_scripts/newton.py
@@ -128,12 +122,18 @@ Iteration 1: rel_err=1.708e-01, |f|=1.134e+02, fwall=0.232, gmreswall=29.471, gm
 Iteration 2: rel_err=1.223e-01, |f|=8.101e+01, fwall=0.235, gmreswall=28.989, gmres_rel_res=1.211e-02, damp=1.000e+00, T=4.628e+00, sx=1.504e-01
 ⋮
 ```
-This script will effectively run until user-terminated.
+This script will effectively run until user-terminated. The states will be saved in temp_data/newton/ in the usual format.
 
-If you want to visualize a particular solution, use jax_scripts/animate.py.
+
+### Step 4: Visualize Solutions
+
+If you want to visualize a particular solution, use jax_scripts/animate.py after specifying the input file.
 ```bash
 python jax_scripts/animate.py
 ```
+This creates the video figures/RPO.mp4.
+
+Currently Newton hunts for RPOs with adaptive timestepping and animate.py uses fixed timestepping. This might matter for some violent solutions.
 
 **Happy hunting!**
 
