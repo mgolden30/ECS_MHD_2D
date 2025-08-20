@@ -12,7 +12,7 @@ import io
 import lib.mhd_jax as mhd_jax
 import lib.dictionaryIO as dictionaryIO
 
-filename = "temp_data/newton/3.npz"
+filename = "temp_data/newton/23.npz"
 #filename = "solutions/Re100b/1.npz"
 
 input_dict, param_dict = dictionaryIO.load_dicts(filename)

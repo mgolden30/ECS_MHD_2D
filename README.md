@@ -129,11 +129,11 @@ This script will effectively run until user-terminated. The states will be saved
 
 If you want to visualize a particular solution, use jax_scripts/animate.py after specifying the input file.
 ```bash
-python jax_scripts/animate.py
+python jax_scripts/animation.py
 ```
 This creates the video figures/RPO.mp4.
 
-Currently Newton hunts for RPOs with adaptive timestepping and animate.py uses fixed timestepping. This might matter for some violent solutions.
+Currently Newton hunts for RPOs with adaptive timestepping and animation.py uses fixed timestepping. This might matter for some violent solutions.
 
 **Happy hunting!**
 
