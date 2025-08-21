@@ -43,6 +43,8 @@ close(vidObj);
 %% Look at a pair of points in the timeseries
 idx = [156, 170];
 
+idx = [232, 242];
+
 dt = 1/256;
 ministeps = 64;
 T = dt*ministeps*(idx(2) - idx(1))
