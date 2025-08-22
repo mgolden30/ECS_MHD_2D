@@ -45,7 +45,7 @@ index = 2;
 q = Q(2:end-1,index);
 %q = Q(1:end-2, index);
 %q = Q(3:end, index);
-n = 512;
+n = 256;
 q = reshape( q, n, n, 2  );
 
 
