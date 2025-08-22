@@ -52,6 +52,15 @@ pip install imageio[ffmpeg]
 
 ---
 
+## Downloading Candidates
+
+Solutions that are exceptionally well converged are in the solutions/ folder. Candidates with low residual, but not fully converged are held in a submodule you can download with the following command.
+```bash
+git submodule update --init --recursive
+```
+
+---
+
 ##  Tutorial
 
 ### Step 1: Generate Turbulent Dataset

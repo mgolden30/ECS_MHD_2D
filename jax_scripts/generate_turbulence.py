@@ -46,7 +46,7 @@ y = param_dict['y']
 forcing = -4*jnp.cos(4*y)
 
 #Generate random initial data. 
-key = jax.random.PRNGKey(seed=54321)
+key = jax.random.PRNGKey(seed=1332663)
 f = 10*jax.random.normal( key, shape=[2,n,n] )
 
 #Alternatively, specify analytic initial data if your heart desires
