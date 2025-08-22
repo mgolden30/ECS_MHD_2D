@@ -1,0 +1,3 @@
+[submodule "candidates"]
+	path = candidates
+	url = https://github.com/mgolden30/MHD_candidate_solutions
