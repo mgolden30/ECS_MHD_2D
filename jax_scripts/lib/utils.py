@@ -7,32 +7,31 @@ import jax
 import jax.numpy as jnp
 
 import lib.loss_functions as loss_functions
-
-
-
+import lib.symmetry as symm
 
 
 
 def create_state_from_turb( turb_dict, idx, param_dict ):
     #Get conditions for RPO guess
-    f = turb_dict['fs'][idx[0]-1,:,:,:]
-    f = jnp.fft.irfft2(f)
+    f1 = turb_dict['fs'][idx[0]-1,:,:,:]
+    f2 = turb_dict['fs'][idx[1]-1,:,:,:]
+    
+    g = symm.find_optimal_symmetry(f1,f2,param_dict,nx=64)
+    
+    #Return the state in real space
+    f = jnp.fft.irfft2(f1)
 
     #Period
     T = param_dict['dt'] * param_dict['ministeps'] * (idx[1] - idx[0])
-
-    #spatial shift
-    #Eventually do a search for a good intial guess
-    sx = 0.0
 
     #number of timesteps 
     steps = param_dict['ministeps'] * (idx[1] - idx[0])
     steps = int(steps) #JAX complains if we do not cast steps
 
-    param_dict.update({ 'steps': steps } )
+    param_dict.update({ 'steps': steps, 'shift_reflect_ny': g[1], 'rot': g[2] } )
 
     #Create a dictionary of optimizable field
-    input_dict = {"fields": f, "T": T, "sx": sx}
+    input_dict = {"fields": f, "T": T, "sx": g[0]}
 
     #Delete keys from the turbulent trajectory param_dict that we won't need anymore to avoid confusion
     del param_dict['dt']

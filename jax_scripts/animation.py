@@ -10,6 +10,7 @@ import imageio.v2 as imageio
 import io
 
 import lib.mhd_jax as mhd_jax
+import lib.timestepping as timestepping
 import lib.dictionaryIO as dictionaryIO
 
 
@@ -24,9 +25,11 @@ import numpy as np
 ####################
 
 #State to animate
-#filename = "temp_data/newton/34.npz"
-filename = "solutions/Re50/1.npz"
-filename = "candidates/Re100/1.npz"
+filename = "temp_data/newton/84.npz"
+#filename = "solutions/Re50/1.npz"
+#filename = "candidates/Re100/1.npz"
+#filename = "temp_data/newton/3.npz"
+
 
 save_every = 32 #How often do we save a frame?
 fps = 8 #frames per second
@@ -60,7 +63,7 @@ sx= input_dict['sx']
 
 
 
-
+print(f"T = {input_dict['T']} and sx = {input_dict['sx']}")
 
 
 
@@ -87,7 +90,9 @@ def main(f):
     frames = []
     nt = steps // save_every
 
-    update = jax.jit( lambda f: mhd_jax.eark4(f, T/steps, save_every, param_dict) )
+    v_fn = lambda f: mhd_jax.state_vel(f,param_dict,include_dissipation=False)
+    L_diag = mhd_jax.dissipation(param_dict)
+    update = jax.jit( lambda f: timestepping.lawson_rk4(f, T/steps*save_every, save_every, v_fn, L_diag, param_dict['mask']) )
 
 
     for t in range(nt):

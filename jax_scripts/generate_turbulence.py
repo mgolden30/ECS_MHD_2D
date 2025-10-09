@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 
 import lib.mhd_jax as mhd_jax
 import lib.dictionaryIO as dictionaryIO
+import lib.timestepping as timestepping
 
 from scipy.io import savemat
 
@@ -22,11 +23,12 @@ os.makedirs( "figures/", exist_ok=True)
 ######################
 n  = 256    #grid resolution
 dt = 1/256  #size of timestep
-ministeps = 64 # How many timesteps do we take between saved snapshots?
 precision = jnp.float64 #double or single precision
 
+ministeps = 64 # How many timesteps do we take between saved snapshots?
 steps = 256 #How many snapshots of turbulence do you want to save?
-transient_steps = 1024*8 #How many timesteps should we take before saving any data?
+transient_steps = 1024*2*4 #How many timesteps should we take before saving any data?
+
 
 nu  = 1/50 #Fluid dissipation
 eta = 1/50 #Magnetic dissipation
@@ -46,7 +48,7 @@ y = param_dict['y']
 forcing = -4*jnp.cos(4*y)
 
 #Generate random initial data. 
-key = jax.random.PRNGKey(seed=1332663)
+key = jax.random.PRNGKey(seed=2222214)
 f = 10*jax.random.normal( key, shape=[2,n,n] )
 
 #Alternatively, specify analytic initial data if your heart desires
@@ -54,7 +56,7 @@ f = 10*jax.random.normal( key, shape=[2,n,n] )
 #f = jnp.zeros([2, n, n], dtype=precision)
 #f = f.at[0, :, :].set( jnp.cos(4*x-0.1)*jnp.sin(x+y-1.2) - jnp.sin(3*x-1)*jnp.cos(y-1) + 2*jnp.cos(2*x-1))
 #f = f.at[1, :, :].set( jnp.cos(3*x+2.1)*jnp.sin(y+3.5) - jnp.cos(1-x) + jnp.sin(x + 5*y - 1 ) )
-
+#f = f.at[0,:,:].set(  jnp.cos(x) )
 
 
 
@@ -76,7 +78,11 @@ f = param_dict['mask'] * f
 ############################
 #Integrate a transient
 ############################
-one_step = jax.jit( lambda f: mhd_jax.eark4(f, dt, 1, param_dict) )
+#one_step = jax.jit( lambda f: mhd_jax.eark4(f, dt, 1, param_dict) )
+
+v_fn = lambda f : mhd_jax.state_vel(f, param_dict, include_dissipation=False)
+L_diag = mhd_jax.dissipation(param_dict)
+one_step = jax.jit( lambda f: timestepping.lawson_rk6(f, dt, 1, v_fn, L_diag, mask=param_dict['mask']) )
 
 start = time.time()
 for i in range(transient_steps):
@@ -93,7 +99,7 @@ plt.close()
 # Integrate some turbulence
 ############################
 
-one_step = jax.jit( lambda f: mhd_jax.eark4(f, dt, ministeps, param_dict) )
+one_step = jax.jit( lambda f: timestepping.lawson_rk6(f, dt*ministeps, ministeps, v_fn, L_diag, mask=param_dict['mask']) )
 
 
 fs = jnp.zeros([steps,2,n,n//2+1], dtype=f.dtype )

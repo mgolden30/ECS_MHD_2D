@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 #Tell the user if they are using the GPU or not when they invoke this library.
-#print(f"Jax is using {jax.devices()}\n")
+print(f"Jax is using {jax.devices()}\n")
 
 
 def construct_domain(n: int, data_type):
@@ -94,6 +94,13 @@ def construct_domain(n: int, data_type):
     return param_dict
 
 
+def dissipation(param_dict):
+    #Construct a dissipation operator
+    k_sq = param_dict['kx']**2 + param_dict['ky']**2
+    coeffs = jnp.array([param_dict['nu'], param_dict['eta']])
+    coeffs = jnp.reshape(coeffs, [2,1,1])
+    return - k_sq * coeffs
+
 
 def state_vel(fields, param_dict, include_dissipation ):
     '''
@@ -142,12 +149,6 @@ def state_vel(fields, param_dict, include_dissipation ):
     
     fu = fu + bx
     fv = fv + by
-    
-    '''    
-    # Add mean magnetic field.
-    fu = fu.at[1, :, :].set(fu[1, :, :] + b0[0])
-    fv = fv.at[1, :, :].set(fv[1, :, :] + b0[1])
-    '''
 
     #Note this computes the u dot grad w and B dot grad j
     advection = fu * fx + fv * fy
@@ -170,135 +171,10 @@ def state_vel(fields, param_dict, include_dissipation ):
     dfdt = jnp.concatenate([dwdt, djdt], axis=-3)
 
     if include_dissipation:
-        coeffs = jnp.reshape( jnp.array([nu, eta]), [2,1,1] )
-        dfdt += - coeffs * k_sq * fields
-        
+        diss = dissipation(param_dict)
+        dfdt += diss * fields
+
     return dfdt
-
-
-
-
-def eark4_step(f, dt, param_dict, diss):
-    '''
-    A step of exponential ansatz Runge-Kutta of 4th order (EARK4). 
-    We do operator splitting to handle the dissipation implicitly and avoid small timesteps.
-    '''
-    
-    vel = lambda f: dt * state_vel( f, param_dict, include_dissipation=False )
-
-    #EARK4 looks like RK$ but with exponential twiddles that you interleave.
-    k1 = vel(f)
-    
-    f  =  f*diss
-    k1 = k1*diss
-    
-    k2 = vel(f + k1/2)
-    k3 = vel(f + k2/2)
-   
-    f  =  f*diss
-    k1 = k1*diss
-    k2 = k2*diss
-    k3 = k3*diss
-   
-    k4 = vel(f + k3)
-    
-    f = f + (k1 + 2*k2 + 2*k3 + k4)/6
-    
-    return f
-
-
-
-
-
-def eark4(f, dt, steps, param_dict):
-    '''
-    Perform many steps of Exponential Ansatz Runge-Kutta 4 (EARK4)
-    '''
-
-    #Construct a diagonal dissipation operator
-    diss_coeffs = jnp.array( [param_dict['nu'], param_dict['eta']] )
-    diss_coeffs = jnp.reshape(diss_coeffs, [2,1,1])
-    k_sq = jnp.square(param_dict['kx']) + jnp.square(param_dict['ky'] )
-    diss = jnp.exp( - diss_coeffs  * k_sq * dt / 2 ) * param_dict['mask']
-    
-    #Need this lambda format to use fori_loop
-    #Might as well jit it since we call this update a lot
-    update_f = jax.jit( lambda _, f: eark4_step(f, dt, param_dict, diss) )
-
-    #Apply to update 
-    f = jax.lax.fori_loop( 0, steps, update_f, f)
-
-    return f
-
-def tdrk4(f, dt, steps, param_dict):
-    '''
-    Perform forward time evolution with Two Derivative RK4 (TDRK4).
-    This integration scheme requires evaulation of the second time derivative,
-    which we will achieve with autodiff.
-    '''
-
-    v = lambda f: state_vel( f, param_dict, include_dissipation=True )
-
-    #define the Jacobian-vector operator with autodiff
-    jac = lambda f, k: jax.jvp( v, primals=(f,), tangents=(k,) )[1]
-
-    def update_f(_, f):
-        #Stage 1
-        k1 = dt * v(f)
-        a1 = dt * jac(f, k1)
-
-        #Stage 2
-        f_temp = f + k1/2 + a1/8
-        k2 = dt * v(f_temp)
-        a2 = dt * jac(f_temp, k2)
-
-        #quadrature
-        f = f + k1 + a1/6 + a2/3
-        return f
-
-    #Apply to update 
-    f = jax.lax.fori_loop( 0, steps, update_f, f)
-
-    return f
-
-def rk4(f, dt, steps, param_dict):
-    '''
-    Perform forward time evolution with standard RK4.
-    '''
-
-    v = lambda f: state_vel( f, param_dict, include_dissipation=True )
-
-    def update_f(_, f):
-        #Stage 1
-        k1 = dt * v(f)
-        k2 = dt * v(f + k1/2)
-        k3 = dt * v(f + k2/2)
-        k4 = dt * v(f + k3)
-
-        #quadrature
-        f = f + k1/6 + k2/3 + k3/3 + k4/6
-        return f
-
-    #Apply to update 
-    f = jax.lax.fori_loop( 0, steps, update_f, f)
-
-    return f
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 def vis(f):    
     figure, axis = plt.subplots(1,2)
@@ -328,16 +204,14 @@ def vis(f):
 
 
 if (__name__ == "__main__"):
-    print( f"Running {__file__} as main. Starting testing..." )
+    print( f"Running {__file__} as main.")
 
-    #Load benchmarking and visualization modules
     import time
+    import timestepping
 
     # If this file is run as a standalone, we should do benchmarking.
-    # Simulation parameters
     n = 256
     precision = jnp.float64
-    # If you want double precision, change JAX defaults
     if (precision == jnp.float64):
         jax.config.update("jax_enable_x64", True)
 
@@ -348,9 +222,9 @@ if (__name__ == "__main__"):
     x = param_dict['x']
     y = param_dict['y']
 
-    nu  = 1/400
-    eta = 1/400
-    b0  = [0.0, 1.0]  # Mean magnetic field
+    nu  = 1/50
+    eta = 1/50
+    b0  = [0.0, 0.1]  # Mean magnetic field
     forcing = -4*jnp.cos(4*y)
 
     # Append the extra system information to param_dict
@@ -360,59 +234,61 @@ if (__name__ == "__main__"):
     f = jnp.zeros([2, n, n], dtype=precision)
     f = f.at[0, :, :].set(jnp.cos(x-0.1)*jnp.sin(x+y-1.2) + jnp.sin(3*x-1)*jnp.cos(y-1))
     f = f.at[1, :, :].set(jnp.cos(x+2.1)*jnp.sin(y+3.5))
-    
+    f = 10*f
+
     #fft the data before we evolve
     f = jnp.fft.rfft2(f)
 
-    # number of times we evaluate the state velocity for benchmarking
+    #Do some benchmarking of Jit
+    def jit_test( fn, trials ):
+        print(f"Running {trials} trials.")
+        start = time.time()
+        for _ in range(trials):
+            _ = fn()
+        stop = time.time()
+        no_jit_time = stop-start
+        print(f"{no_jit_time:.3e} seconds (no jit)")
+
+        jit_fn = jax.jit(fn)
+        _ = jit_fn() #compile on first function call
+
+        start = time.time()
+        for _ in range(trials):
+            _ = jit_fn()
+        stop = time.time()
+        with_jit_time = stop-start
+        print(f"{with_jit_time:.3e} seconds (jit)")
+        print(f"jit provided a x{no_jit_time/with_jit_time:.2f} speedup\n")
+        print("")
+
     trials = 128
+    v_fn = lambda : state_vel(f, param_dict, include_dissipation=True)
+    print("Benchmarking velocity...")
+    jit_test( v_fn, trials )
 
-    v = lambda f: state_vel(f, param_dict, include_dissipation=False)
+    #redefine v_fn to take an argument
+    v_fn = lambda f : state_vel(f, param_dict, include_dissipation=True)  
 
-    
-    start = time.time()
-    for _ in range(trials):
-        dfdt = v(f)
-    stop = time.time()
-    no_jit_time = stop-start
-    print(f"state_vel {trials} times: {no_jit_time} seconds (no jit)")
-
-    jit_v = jax.jit(v)
-    _ = jit_v(f) #compile on first function call
-
-    start = time.time()
-    for _ in range(trials):
-        dfdt = jit_v(f)
-    stop = time.time()
-    with_jit_time = stop-start
-    print(f"state_vel {trials} times: {with_jit_time} seconds (with jit)")
-    print(f"jit provided a x{no_jit_time/with_jit_time} speedup\n")
-    
+    t = 1.00
+    steps = 256
+    fn = lambda : timestepping.rk4(f, t, steps, v_fn)
+    print(f"Benchmarking DNS with RK4...")
+    trials = 4
+    jit_test( fn, trials )
 
 
+    #Let's also do a quick convergence test
+    steps_fine = 4*1024
+    f_fine = timestepping.rk4(f, t, steps_fine, v_fn)
 
-    print(f"Benchmarking DNS...")
-    
-    dt = 0.01
-    steps = 1024*2
+    steps_array = jnp.array( [ 512, 800, 1024])
+    err = jnp.zeros((len(steps_array),))
+    for i in range(len(steps_array)):
+        steps = steps_array[i]
+        f_out = timestepping.rk4(f, t, steps, v_fn)
 
-    start = time.time()
-    _ = eark4(f, dt, steps, param_dict)
-    stop = time.time()
-    print(f"{steps} timesteps at dt={dt} took {stop-start} seconds (no jit).")
+        err =  err.at[i].set(jnp.sqrt(jnp.mean( jnp.square(jnp.fft.irfft2(f_out - f_fine)))))
+    print(f"errors are {err}")
 
-
-    
-    #Try compiling it
-    jit_eark4 = jax.jit(eark4)
-    _ = jit_eark4(f, dt, steps, param_dict)
-
-    start = time.time()
-    f_final = jit_eark4(f, dt, steps, param_dict)
-    stop = time.time()
-    print(f"{steps} timesteps at dt={dt} took {stop-start} seconds (with jit).")
-
-
-    #Make a figure of the vorticity and current after time evolution    
-    figure, axis = vis(f_final)
-    figure.savefig("figures/test.png", dpi=1000)
+    poly = jnp.polyfit( jnp.log(steps_array), jnp.log(err), deg=1 )
+    print(f"Empirical power law fit gives an exponent of {poly[0]:.3f}")

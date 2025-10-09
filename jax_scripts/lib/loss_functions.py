@@ -3,99 +3,144 @@ import jax.numpy as jnp
 
 import lib.mhd_jax as mhd_jax
 import lib.timestepping as timestepping
+import lib.symmetry as symm
 
 
-
-def loss_RPO_debug( input_dict, param_dict ):
-    '''
+def mismatch_RPO( input_dict, param_dict, mode ):
+    """
     PURPOSE:
-    Define a scalar loss for Relative Periodic Orbits (RPOs)
-    '''
+    Compute the mismatch between initial and final conditions for an RPO.
 
-    # Unpack tensors we need 
-    f0  = input_dict['fields']
-    T  = input_dict['T']
-    sx = input_dict['sx']
+    The purpose of this function is to be a unified interface for various time integration schemes that I can use
+    for both adjoint descent and Newton-Raphson iteration. I want this to be the only function in my code
+    that does forward time integration for converging RPOs.
+
+    Parameters
+    ----------
+    input_dict : dictionary
+        A dictionary of tensors I want to optimize. Should contain "fields", "T", and "sx".
+    param_dict : dictionary
+        A dictionary of all other information needed by the integrator.
+    mode : string
+        A flag that determines the integration called integration routine
     
+    Returns
+    -------
+    f0 : array
+        initial condition
+    f : array
+        final condition with symmetries applied. For an RPO, f = f0. 
+        That is, f = apply(g, integrate(f0,T)) in pseudocode.
+    info : Any
+        Any information from integration you might want to return. 
+        For adaptive timestepping, this might be useful.
+    """
+
+    # The tensor of input dict will be the optimized quantities
+    f0 = input_dict['fields'] #initial condition (in real space) assumed of size [2,n,n]
+    T  = input_dict['T']      #period
+    sx = input_dict['sx']     #spatial shift (assuming continuous symmetry in x)
+    
+    #Do integration in Fourier space
     f0  = jnp.fft.rfft2(f0)
 
-    #Construct a dissipation operator
-    k_sq = param_dict['kx']**2 + param_dict['ky']**2
-    coeffs = jnp.array([param_dict['nu'], param_dict['eta']])
-    coeffs = jnp.reshape(coeffs, [2,1,1])
-    dissipation = - k_sq * coeffs
+    #Do time integration depending on the user specified mode
+    match mode:
+        case "RK4":
+            num_checkpoints = param_dict['num_checkpoints']
+            ministeps = param_dict['ministeps']
+            v_fn = lambda f: mhd_jax.state_vel(f,param_dict,include_dissipation=True)
+            integrate = jax.checkpoint( lambda _, f : timestepping.rk4(f, T/num_checkpoints, ministeps, v_fn))
+            f = jax.lax.fori_loop( 0, num_checkpoints, integrate, f0)
+            info = None
+        case "Lawson_RK4":
+            num_checkpoints = param_dict['num_checkpoints']
+            ministeps = param_dict['ministeps']
+            v_fn = lambda f: mhd_jax.state_vel(f,param_dict,include_dissipation=False)
+            L_diag = mhd_jax.dissipation(param_dict)
+            integrate = jax.checkpoint( lambda _, f : timestepping.lawson_rk4(f, T/num_checkpoints, ministeps, v_fn, L_diag, mask=param_dict['mask']))
+            f = jax.lax.fori_loop( 0, num_checkpoints, integrate, f0)
+            info = None
+        case "Lawson_RK6":
+            v_fn = lambda f: mhd_jax.state_vel(f,param_dict,include_dissipation=False)
+            L_diag = mhd_jax.dissipation(param_dict)
+            f = timestepping.lawson_rk6(f0, t=T, steps=param_dict['steps'], v_fn=v_fn, L_diag=L_diag, mask=param_dict['mask'])
+            info = None
+        case "Lawson_RK43":
+            #Provide a nonlinear velocity function
+            #vel_fn = lambda f: mhd_jax.state_vel(f, param_dict, include_dissipation=False)    
+            #Integrate with adaptive timestepping
+            #f, info = timestepping.eark43(f0, vel_fn, dissipation, T, h=1e-2, atol=adaptive_dict["atol"], max_steps_per_checkpoint=adaptive_dict["max_steps_per_checkpoint"], checkpoints=adaptive_dict["checkpoints"] )
+            f = f0
+            info = None #Change this for adaptive timestepping
+        case _:
+            print(f"You selected mode = {mode}, which does not exist. Exiting...")
+            exit()
 
-    #Provide a nonlinear velocity function
-    vel_fn = lambda f: mhd_jax.state_vel(f, param_dict, include_dissipation=False)
-    
-    #Do the damn thing
-    f, info = timestepping.eark43(f0, vel_fn, dissipation, T, h=1e-2, atol=1e-2, max_steps_per_checkpoint=64, checkpoints=32 )
+    #Shift the resulting fields with symmetry operations.
+    f = symm.shift_x(f, sx, param_dict)
+    f = symm.shift_reflect(f, param_dict['shift_reflect_ny'], param_dict)
+    if param_dict['rot']:
+        f = symm.rot180(f)
 
-    steps= param_dict['steps']
-    dt = T/steps
-    f2 = mhd_jax.eark4(f0, dt, steps, param_dict )
-    from scipy.io import savemat
-    savemat("debug.mat", {"f0": jnp.fft.irfft2(f0), "f": jnp.fft.irfft2(f), "f2": jnp.fft.irfft2(f2), "hs": info["hs"]})
+    return f0, f, info
 
-    #Shift the resulting fields
-    f = jnp.exp( -1j * param_dict['kx'] * sx ) * f
-    
-    #compute the mismatch
-    diff   = f - f0
-    diff_v = mhd_jax.state_vel(f, param_dict, include_dissipation=True) - mhd_jax.state_vel(f0, param_dict, include_dissipation=True)
 
-    #Transform back to real space
-    diff   = jnp.fft.irfft2(diff)
-    diff_v = jnp.fft.irfft2(diff_v)
+def loss_RPO( input_dict, param_dict, mode ):
+    #Do forward time integration
+    f0, f, info = mismatch_RPO( input_dict, param_dict, mode )
 
-    #MSE error
-    loss = jnp.mean( jnp.square(diff) + jnp.mean( jnp.square(diff_v) )) 
-    
+    #compute mismatch
+    diff = f - f0
+
+    #Transform to real space
+    diff = jnp.fft.irfft2(diff)
+
+    #Compute the MSE
+    loss = jnp.mean(jnp.square(diff))
     return loss, info
 
+def phase_conditions(f0, param_dict):
+    #Compute the x and t derivatives for phase conditions
+    vt = mhd_jax.state_vel(f0, param_dict, include_dissipation=True)
+    vx = 1j*param_dict['kx']*f0
 
-def loss_RPO( input_dict, param_dict, adaptive_dict ):
+    #Move them to real space and stop the gradient
+    vt = jax.lax.stop_gradient( jnp.fft.irfft2(vt) )
+    vx = jax.lax.stop_gradient( jnp.fft.irfft2(vx) )
+    
+    #Compute dot products with our state in real space
+    f0 = jnp.fft.irfft2(f0)
+    pt = jnp.mean( vt * f0 )
+    px = jnp.mean( vx * f0 )
+
+    #Force them to be zero, but not differentiate to zero
+    pt = pt - jax.lax.stop_gradient(pt)
+    px = px - jax.lax.stop_gradient(px)
+    return pt, px
+
+def objective_RPO( input_dict, param_dict, mode ):
     '''
     PURPOSE:
-    Define a scalar loss for Relative Periodic Orbits (RPOs)
+    Define a vector objective for Relative Periodic Orbits (RPOs). We can use Newton methods to converge this.
     '''
 
-    # Unpack tensors we need 
-    f0 = input_dict['fields']
-    T  = input_dict['T']
-    sx = input_dict['sx']
-    
-    f0  = jnp.fft.rfft2(f0)
+    #Do forward time integration
+    f0, f, info = mismatch_RPO( input_dict, param_dict, mode )
+        
+    #Phase conditions are a hack to implement orthogonality conditions with autodiff
+    pt, px = phase_conditions(f0, param_dict)
 
-    #Construct a dissipation operator
-    k_sq = param_dict['kx']**2 + param_dict['ky']**2
-    coeffs = jnp.array([param_dict['nu'], param_dict['eta']])
-    coeffs = jnp.reshape(coeffs, [2,1,1])
-    dissipation = - k_sq * coeffs
+    #Create a dictionary with identical names to input_dict
+    out_dict = {"fields": jnp.fft.irfft2(f0 - f), "T": pt, "sx": px }
 
-    #Provide a nonlinear velocity function
-    vel_fn = lambda f: mhd_jax.state_vel(f, param_dict, include_dissipation=False)
-    
-    #Do the damn thing
-    f, info = timestepping.eark43(f0, vel_fn, dissipation, T, h=1e-2, atol=adaptive_dict["atol"], max_steps_per_checkpoint=adaptive_dict["max_steps_per_checkpoint"], checkpoints=adaptive_dict["checkpoints"] )
-
-    #Shift the resulting fields
-    f = jnp.exp( -1j * param_dict['kx'] * sx ) * f
-    
-    #compute the mismatch
-    diff   = f - f0
-    diff_v = mhd_jax.state_vel(f, param_dict, include_dissipation=True) - mhd_jax.state_vel(f0, param_dict, include_dissipation=True)
-
-    #Transform back to real space
-    diff   = jnp.fft.irfft2(diff)
-    diff_v = jnp.fft.irfft2(diff_v)
-
-    #MSE error
-    loss = jnp.mean( jnp.square(diff) ) #+ jnp.square(diff_v) ) 
-    
-    return loss, info
+    #Discard info for now. TBD how I handle it.
+    return out_dict
 
 
+
+
+"""
 def objective_RPO_adaptive( input_dict, param_dict, adaptive_dict ):
     '''
     PURPOSE:
@@ -118,11 +163,14 @@ def objective_RPO_adaptive( input_dict, param_dict, adaptive_dict ):
     #Provide a nonlinear velocity function
     vel_fn = lambda f: mhd_jax.state_vel(f, param_dict, include_dissipation=False)
     
-    #Do the damn thing
+    #Integrate in time
     f, info = timestepping.eark43(f0, vel_fn, dissipation, T, h=1e-2, atol=adaptive_dict["atol"], max_steps_per_checkpoint=adaptive_dict["max_steps_per_checkpoint"], checkpoints=adaptive_dict["checkpoints"] )
 
     #Shift the resulting fields
-    f = jnp.exp( -1j * param_dict['kx'] * sx ) * f
+    f = symm.shift_x(f, sx, param_dict)
+    f = symm.shift_reflect(f, param_dict['shift_reflect_ny'], param_dict)
+    if param_dict['rot']:
+        f = symm.rot180(f)
     
     #compute the mismatch
     diff = jnp.fft.irfft2(f - f0)
@@ -149,15 +197,15 @@ def objective_RPO_adaptive( input_dict, param_dict, adaptive_dict ):
     px = px / f0.size
 
     #Create a dictionary with identical names to input_dict
-    out_dict = {"fields": diff*(1.0 + 1.0/T), "T": pt, "sx": px }
+    out_dict = {"fields": diff*(1.0 + 1.0/(T*T)), "T": pt, "sx": px }
 
     #jax.debug.print(f"completed: {info['completed']}, accepted: {info['accepted']}, rejected: {info['rejected']}")
     return out_dict 
+"""
 
 
 
-
-
+""""
 def objective_RPO_multishooting( input_dict, param_dict ):
     '''
     PURPOSE:
@@ -258,21 +306,44 @@ def objective_RPO( input_dict, param_dict ):
 
     dt = T/steps
 
-    f = mhd_jax.eark4(f, dt, steps, param_dict )
-
+    #f = mhd_jax.eark4(f, dt, steps, param_dict )
+    f = mhd_jax.lawson_rk6(f0, dt, steps, param_dict)
+    
     #Shift the resulting fields
-    f = jnp.exp( -1j * param_dict['kx'] * sx ) * f
-
+    f = symm.shift_x(f, sx, param_dict)
+    f = symm.shift_reflect(f, param_dict['shift_reflect_ny'], param_dict)
+    if param_dict['rot']:
+        f = symm.rot180(f)
+    
     #compute the mismatch
-    diff = f - f0
+    diff = jnp.fft.irfft2(f - f0)
+    
+    #Compute the x and t derivatives for phase conditions
+    vt = mhd_jax.state_vel(f0, param_dict, include_dissipation=True)
+    vx = 1j*param_dict['kx']*f0
 
-    #Transform back to real space
-    diff = jnp.fft.irfft2(diff)
+    #Move them to real space and stop the gradient
+    vt = jax.lax.stop_gradient( jnp.fft.irfft2(vt) )
+    vx = jax.lax.stop_gradient( jnp.fft.irfft2(vx) )
+    
+    #Compute dot products with our state
+    f0 = jnp.fft.irfft2(f0)
+    pt = jnp.sum( vt * f0 )
+    px = jnp.sum( vx * f0 )
 
-    #Return a dictionary
-    output_dict = {'fields': diff, 'T': 0.0, 'sx': 0.0}
+    #Force them to be zero, but not differentiate to zero
+    pt = pt - jax.lax.stop_gradient(pt)
+    px = px - jax.lax.stop_gradient(px)
 
-    return output_dict
+    #Try rescaling these constraints to see the impact
+    pt = pt / f0.size
+    px = px / f0.size
+
+    #Create a dictionary with identical names to input_dict
+    out_dict = {"fields": diff*(1.0 + 1.0/(T*T)), "T": pt, "sx": px }
+
+    #jax.debug.print(f"completed: {info['completed']}, accepted: {info['accepted']}, rejected: {info['rejected']}")
+    return out_dict 
 
 def objective_RPO_with_checkpoints( input_dict, param_dict ):
     '''
@@ -364,7 +435,7 @@ def add_phase_conditions( input_dict, tangent_dict, Jtangent_dict, param_dict ):
     Jtangent_dict['T']  = jnp.sum( df * dfdt )
     Jtangent_dict['sx'] = jnp.sum( df * dfdx )
     return Jtangent_dict
-
+"""
 
 
 

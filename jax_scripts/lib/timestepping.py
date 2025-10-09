@@ -1,7 +1,151 @@
+'''
+NOTES:
+
+October 8th, 2025
+I'm doing a major rewrite of this file in an effort to standardize these functions to some extent
+and give more power to the user in selecting and defining their own time integration.
+In particular, I want to enforce these conditions:
+    1. These functions should be abstract integration routines.
+    2. The first two arguments should always be the initial condition f and time t.
+'''
+
+
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
 
+def rk4(f, t, steps, v_fn):
+    """
+    Classic fourth order Runge-Kutta
+    
+    Parameters
+    ----------
+    f : array
+        initial condition f(0)
+    t : float
+        integration time
+    steps : int
+        number of timesteps
+    v_fn : callable
+        Computes the time derivative of the state
+        
+    Returns
+    -------
+    f : array
+        The numerical approximation of f(t)
+    """
+    h = t/steps
+    def update_f(_, f):
+        k1 = h * v_fn(f)
+        k2 = h * v_fn(f + k1/2)
+        k3 = h * v_fn(f + k2/2)
+        k4 = h * v_fn(f + k3)
+        return f + k1/6 + k2/3 + k3/3 + k4/6
+    return jax.lax.fori_loop( 0, steps, update_f, f)
+
+def lawson_rk4(f, t, steps, v_fn, L_diag, mask=None):
+    """
+    Classic fourth order Runge-Kutta applied to Lawson integration as proposed in 
+    "Generalized Runge-Kutta processes for stable systems with large Lipschitz constants" by J. Lawson 1967.
+    
+    Parameters
+    ----------
+    f : array
+        initial condition f(0)
+    t : float
+        integration time
+    steps : int
+        number of timesteps
+    v_fn : callable
+        Computes the (nonlinear) time derivative of the state
+    L_diag : array
+        The linear dynamics to handle implicitly. I assume these dynamics are diagonal, so L_diag is the same shape as f.
+        
+    Returns
+    -------
+    f : array
+        The numerical approximation of f(t)
+    """
+    h = t/steps
+    e = jnp.exp( h/2 * L_diag )
+    if mask is not None:
+        e = e*mask
+    def update_f(_, f):
+        k1 = h * v_fn(f)
+        f = e*f; k1 = e*k1;
+        k2 = h * v_fn(f + k1/2)
+        k3 = h * v_fn(f + k2/2)
+        f = e*f; k1 = e*k1; k2 = e*k2; k3 = e*k3;        
+        k4 = h * v_fn(f + k3)
+        return f + k1/6 + k2/3 + k3/3 + k4/6
+    return jax.lax.fori_loop( 0, steps, update_f, f)
+
+def lawson_rk6(f, t, steps, v_fn, L_diag, mask=None):
+    """
+    Sixth order Runge-Kutta applied to Lawson integration 
+
+    Parameters
+    ----------
+    f : array
+        initial condition f(0)
+    t : float
+        integration time
+    steps : int
+        number of timesteps
+    v_fn : callable
+        Computes the (nonlinear) time derivative of the state
+    L_diag : array
+        The linear dynamics to handle implicitly. I assume these dynamics are diagonal, so L_diag is the same shape as f.
+        
+    Returns
+    -------
+    f : array
+        The numerical approximation of f(t)
+    """
+    h = t/steps
+    e = jnp.exp( h/6 * L_diag )
+    if mask is not None:
+        e = e*mask
+    def update_f(_, f):
+        k1 = h * v_fn(f)
+        f = e*f; k1 = e*k1;
+        k2 = h * v_fn(f + k1/6)
+        k3 = h * v_fn(f + k1/12 + k2/12);
+        f = e*f; k1 = e*k1; k2 = e*k2; k3 = e*k3;        
+        k4 = h * v_fn(f - k2*4/33 + k3*5/11);
+        f = e*f; k1 = e*k1; k2 = e*k2; k3 = e*k3; k4 = e*k4
+        k5 = h * v_fn(f - k1/4 - k2*29/44 + k3*31/22);
+        f = e*f; k1 = e*k1; k2 = e*k2; k3 = e*k3; k4 = e*k4; k5 = e*k5
+        k6 = h * v_fn(f + k1*3/11 + k2*8/33 - k3*4/11 + k4/11 + k5*14/33);
+        f = e*f; k1 = e*k1; k2 = e*k2; k3 = e*k3; k4 = e*k4; k5 = e*k5; k6 = e*k6
+        k7 = h * v_fn(f - k1*17/48 - k2*5/12 + k3 + k4 - k5*13/12 + k6*11/16);
+        f = e*f; k1 = e*k1; k2 = e*k2; k3 = e*k3; k4 = e*k4; k5 = e*k5; k6 = e*k6; k7 = e*k7
+        k8 = h * v_fn(f + k1*20/39 + k2*12/39 - k3*31/39 - k4/39 + k5*34/39 - k6*11/39 + k7*16/39);             
+        return f + 13/200*(k1+k8) + 4/25*(k3+k7) + 11/40*(k4+k6)
+    return jax.lax.fori_loop( 0, steps, update_f, f)
+
+def tdrk4(f, dt, steps, v_fn):
+    '''
+    Perform forward time evolution with Two Derivative RK4 (TDRK4).
+    This integration scheme requires evaulation of the second time derivative,
+    which we will achieve with autodiff.
+    '''
+    #define the Jacobian-vector operator with autodiff
+    jac = lambda f, k: jax.jvp( v_fn, primals=(f,), tangents=(k,) )[1]
+    def update_f(_, f):
+        #Stage 1
+        k1 = dt * v_fn(f)
+        a1 = dt * jac(f, k1)
+        #Stage 2
+        f_temp = f + k1/2 + a1/8
+        k2 = dt * v_fn(f_temp)
+        a2 = dt * jac(f_temp, k2)
+        #quadrature
+        f = f + k1 + a1/6 + a2/3
+        return f
+    #Apply to update 
+    f = jax.lax.fori_loop( 0, steps, update_f, f)
+    return f
 
 def runge_kutta_32( x, vel_fn, t, h=1e-2, atol=1e-4):
     '''
