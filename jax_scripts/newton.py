@@ -1,5 +1,16 @@
 '''
-The goal of this script is to use Newton-GMRES.
+Written by Matthew Golden some time in 2025
+
+PURPOSE:
+The goal of this script is to use Newton-GMRES and variants to converge periodic solutions to the MHD equations.
+The Jacobian action is computed with autodiff via jax.jvp(). This allows us to get quite creative in the definition of 
+the loss function.
+
+NOTES:
+Autodiff (and lessons learned in memory management) enable us to compute the adjoint (effectively the transpose) of the Jacobian.
+This is equivalent to an adjoint solver. Instead of solving for the Newton step Js=-f, we can solve for the Gauss-Newton step
+(J^T J)s = -J^Tf. In my experience, this requires significantly fewer Krylov dimensions and allows much larger step sizes. 
+This is, as with any first order method, a risk of falling into local minima.
 '''
 
 
@@ -28,44 +39,38 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
+input_dict, param_dict = dictionaryIO.load_dicts("temp_data/adjoint_descent/14464.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("temp_data/newton/35.npz")
 
-input_dict, param_dict = dictionaryIO.load_dicts("temp_data/adjoint_descent/320.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("temp_data/newton/84.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("candidates/Re100/1.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re50/1.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("ghost/50.npz")
-
-#input_dict.update({"nu": 1/50, "eta":1/50})
-
-#print(input_dict["nu"])
-#print(input_dict["eta"])
-#exit()
 
 ##################
 # NEWTON OPTIONS
 ##################
+#mode = "RK4"
+#mode = "Lawson_RK4"
+#mode = "Lawson_RK6"
+#mode = "TDRK4"
+mode = "Lawson_RK43"
 
-#shooting_mode = "single_shooting" #"single_shooting" or "multi_shooting"
-#integrate_mode = "fixed_timesteps" #"fixed_timesteps" or "adaptive"
-
-mode = "Lawson_RK4"
-
-adaptive_dict = {
+#For adaptive timestepping, modify parameters here
+if mode == "Lawson_RK43":
+    adaptive_dict = {
     "atol": 1e-5, #We make the timestep small enough that each step has max(abs(err)) < atol
     "checkpoints": 128, #How many times so we restart integration to preserve memory?
     "max_steps_per_checkpoint": 32 #How many steps do we take per timestep?
-}
-#num_checkpoints = 32 #for fixed timestep integration. Modify the adaptive_dict for adaptive timestepping
+    }
+    #Add this dictionary as an element of param_dict
+    param_dict["adaptive_dict"] = adaptive_dict
 
 
 use_transpose = True  #False solves Ax=b. True solves A^T A x = A^T b
-s_min = 0.0    #What is the smallest singular value you are comfortable inverting. If s_min=0, you just compute the lstsq solution.
+s_min = 0.0  #What is the smallest singular value you are comfortable inverting. If s_min=0, you just compute the lstsq solution.
 maxit = 1024 #Max iterations
-inner = 4   #Krylov subspace dimension  
+inner = 8   #Krylov subspace dimension  
 outer = 1    #How many times should we restart GMRES? Only do restarts if you literally can't fit a larger Krylov subsapce in memory.
 
 do_line_search = True #When we have a Newton step, should we do a line search in that direction?
-default_damp  = 0.01 #if you don't do a line search, then damp the newton step with this
+default_damp  = 0.1 #if you don't do a line search, then damp the newton step with this
 
 #obj, param_dict = utils.choose_objective_fn( shooting_mode, integrate_mode, param_dict, num_checkpoints, adaptive_dict )
 obj = lambda input_dict, param_dict : loss_functions.objective_RPO(input_dict, param_dict, mode)

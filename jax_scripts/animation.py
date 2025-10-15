@@ -25,7 +25,7 @@ import numpy as np
 ####################
 
 #State to animate
-filename = "temp_data/newton/84.npz"
+filename = "temp_data/newton/4.npz"
 #filename = "solutions/Re50/1.npz"
 #filename = "candidates/Re100/1.npz"
 #filename = "temp_data/newton/3.npz"
@@ -35,13 +35,12 @@ save_every = 32 #How often do we save a frame?
 fps = 8 #frames per second
 vmin = -10.0 #colorbar limits
 vmax = 10.0 #colorbar limits
+comoving = False
+double_domain = False
+add_last_frame = True #Set to false for perfect periodic video
 
 bg_color = "black"
 font_color = "white"
-
-double_domain = True #Do you want to double to domain in both directions
-
-
 
 
 
@@ -49,6 +48,9 @@ double_domain = True #Do you want to double to domain in both directions
 
 
 input_dict, param_dict = dictionaryIO.load_dicts(filename)
+
+print((input_dict["sx"], param_dict["shift_reflect_ny"], param_dict["rot"]))
+
 
 steps = param_dict['steps'] #number of timesteps
 
@@ -94,8 +96,11 @@ def main(f):
     L_diag = mhd_jax.dissipation(param_dict)
     update = jax.jit( lambda f: timestepping.lawson_rk4(f, T/steps*save_every, save_every, v_fn, L_diag, param_dict['mask']) )
 
+    num_frames = nt
+    if add_last_frame:
+        num_frames = nt + 1
 
-    for t in range(nt):
+    for t in range(num_frames):
         print(t)
 
         fig, axs = plt.subplots(1, 2, figsize=(8, 4), facecolor=bg_color)  # 1 row, 2 columns
@@ -133,7 +138,8 @@ def main(f):
         #Update the state after writing
         f = jnp.fft.rfft2(f)
         f = update(f)
-        f = jnp.exp( -1j*sx/nt*param_dict['kx'] )*f #Spatially shift to comoving frame
+        if comoving:
+            f = jnp.exp( -1j*sx/nt*param_dict['kx'] )*f #Spatially shift to comoving frame
         f = jnp.fft.irfft2(f)
 
     # write GIF

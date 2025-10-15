@@ -183,32 +183,150 @@ def newton_gmres_hookstep( AtA, Atb, m, s, f, f0, J, b, input_dict ):
         #Solve for the step in physical coordinates
         step = Q @ (V @ (b2/(D+t)))
 
-        #Approximate the Jacobian vector product with this step
-        Jv_fd =  f_vector( x0 - step ) - f0
-
-        #Compute the exact Jacobian vector product
-        Jv = J(-step)
-
-        #Compute a dimensionless "distance" between these vectors.  
-        distance = jnp.linalg.norm( Jv_fd - Jv ) / jnp.sqrt( jnp.linalg.norm(Jv) * jnp.linalg.norm(Jv_fd) )
-
-        print(f"distance = {distance}")
-        if distance > 0.1:
-            #This is not a good linear approximation. Try a smaller Newton step
-            s = s / 2
-        else:
-            #We have an acceptable step! Try taking it.
-            s = s * 1.25 #Try increasing the acceptable size of step for next time
+        #Check if the step decreases the norm of the objective function
+        f2 = f_vector(x0 - step)
+ 
+        if jnp.linalg.norm(f2) < jnp.linalg.norm(f0):
+            s = s * 2 #Try increasing the acceptable size of step
             break
-
+        else:
+            #This is not a good step. Try a smaller Newton step
+            s = s / 2
+            
     #Compute both relative residuals the lazy (but accurate) way
     rel_res_1 = jnp.linalg.norm( AtA(step) - Atb )/jnp.linalg.norm(Atb)
+    Jv = J(step)
     rel_res_2 = jnp.linalg.norm( Jv + b )/jnp.linalg.norm(b) #sign change +b for reasons
 
     #Update the state
     input_dict = unravel_fn( x0 - step )
 
     return input_dict, s, rel_res_1, rel_res_2
+
+
+
+def newton_gmres_hookstep_v2( A, b, m, s, objective, input_dict ):
+    '''
+    Iteratively solve for a Newton-Raphson step with a bound on the norm of the solution.
+
+    Generate a Krylov subspace in the usual GMRES way, but solve the linear system with
+    a bound on the 2-norm of the step. 
+
+    INPUT:
+    A : callable
+        function for evaluating the matrix-vector product
+    b : array
+        right hand side Ax=b
+        This is the flattened output of objective(input_dict)
+    m : int
+        dimension of Krylov subspace
+    s : float
+        upper bound on the 2-norm of the newton step
+    objective: callable
+        Acts on a dictionary of inputs and returns a dictionary of tensors that we want to be zero.
+    input_dict : dict
+        state dictionary.
+
+    Returns:
+    
+    '''
+    
+    n = b.size #number of elements in this square system
+    Q = jnp.zeros((n,m+1))
+    H = jnp.zeros((m+1,m))
+
+    Q = Q.at[:,0].set( b / jnp.linalg.norm(b) )
+        
+    def orthogonalize(u,v):
+        dot = jnp.dot(u,v)
+        u = u - dot*v
+        return dot, u
+
+    for k in range(m):
+        Aq = A(Q[:,k])
+        for j in range(k+1):
+            hj, Aq = orthogonalize( Aq, Q[:,j])
+            H = H.at[j,k].set(hj)
+        #Reorthogonalize a couple of times for improved numerical stability
+        for _ in range(2):
+            for j in range(k+1):
+                _, Aq = orthogonalize( Aq, Q[:,j])
+
+        hk1 = jnp.linalg.norm(Aq)
+        H = H.at[k+1, k].set(hk1)
+        Q = Q.at[:,k+1].set(Aq / hk1)
+    
+    #Project b into the Krylov subspace
+    b2 = Q.transpose() @ b
+
+    #Compute the economy SVD of H
+    U, S, Vh = jnp.linalg.svd(H,full_matrices=False)
+    
+    #Solve the least squares problem by dividing by the singular values
+    y = U.transpose() @ b2
+    y = y/S #For small singular values, this will be dangerous! (Hence the rest of this function)
+    y = Vh.transpose() @ y
+
+    #Do a while loop to find a Newton step that actually decreases the norm of 
+    #the objective function. At each iteration of this loop, s will change.
+    while(True):
+        if jnp.linalg.norm(y) > s*s:
+            #We have a step that is too big! We can find the correct regularization scheme
+            b3 = H.transpose() @ b2
+            b4 = Vh @ b3
+            
+            g = lambda t : s - jnp.linalg.norm( b4/(S*S+t) )
+
+            def bisection(g, lower, upper, maxit):
+                #For the problem of interest, if g(0) is positive we can just return 0
+                if g(0) > 0:
+                    print("No bisection needed")
+                    t = 0
+                else:
+                    for _ in range(maxit):
+                        t = (lower + upper)/2
+                        if g(t) > 0:
+                            upper = t
+                        else:
+                            lower = t
+                return t
+            
+            lower_bound = 0
+            upper_bound = jnp.sqrt(m) * jnp.linalg.norm(b4)/s
+            t = bisection(g, lower_bound, upper_bound, maxit=128)
+
+            z = b4/(S*S + t)
+            #print(f"DEBUG: Relative error in 2-norm of z is {jnp.linalg.norm(z)/s - 1}")
+            y = Vh.transpose() @ z
+        #This quantity is x, the solution to Ax=b, but I want to reserve x for the state vector.
+        #Call it dx for change in x, since this is a Newton step.
+        dx = Q[:,:-1] @ y
+        
+        #Unpack the state
+        x, unravel_fn = jax.flatten_util.ravel_pytree(input_dict)
+
+        #Assume the f passed maps dictionaries to dictionaries
+        f = lambda x: jax.flatten_util.ravel_pytree(objective( unravel_fn(x) ))[0]
+
+        f_new = f(x - dx)
+        
+        if jnp.linalg.norm(f_new) < jnp.linalg.norm(b):
+            #We decreased the objective function!
+            #Try increasing the acceptable size of step new time
+            s = s * 2
+            break
+        else:
+            #This is not a good step. Try a smaller Newton step
+            s = s / 2
+            
+    #Compute both relative residuals the lazy (but accurate) way
+    rel_res = jnp.linalg.norm( A(dx) - b )/jnp.linalg.norm(b)
+    
+    #Update the state
+    input_dict = unravel_fn( x - dx )
+
+    return input_dict, s, rel_res
+
 
 
 def block_gmres(A, b, m, B, tol=1e-8, iteration=0):

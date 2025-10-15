@@ -47,6 +47,7 @@ def mismatch_RPO( input_dict, param_dict, mode ):
     #Do time integration depending on the user specified mode
     match mode:
         case "RK4":
+            #Classical RK4
             num_checkpoints = param_dict['num_checkpoints']
             ministeps = param_dict['ministeps']
             v_fn = lambda f: mhd_jax.state_vel(f,param_dict,include_dissipation=True)
@@ -54,6 +55,7 @@ def mismatch_RPO( input_dict, param_dict, mode ):
             f = jax.lax.fori_loop( 0, num_checkpoints, integrate, f0)
             info = None
         case "Lawson_RK4":
+            #Handle dissipation implicitly, but do RK4 on the nonlinear bits
             num_checkpoints = param_dict['num_checkpoints']
             ministeps = param_dict['ministeps']
             v_fn = lambda f: mhd_jax.state_vel(f,param_dict,include_dissipation=False)
@@ -62,17 +64,25 @@ def mismatch_RPO( input_dict, param_dict, mode ):
             f = jax.lax.fori_loop( 0, num_checkpoints, integrate, f0)
             info = None
         case "Lawson_RK6":
+            #Handle dissipation implicitly, but do RK6 on the nonlinear bits
             v_fn = lambda f: mhd_jax.state_vel(f,param_dict,include_dissipation=False)
             L_diag = mhd_jax.dissipation(param_dict)
             f = timestepping.lawson_rk6(f0, t=T, steps=param_dict['steps'], v_fn=v_fn, L_diag=L_diag, mask=param_dict['mask'])
             info = None
         case "Lawson_RK43":
             #Provide a nonlinear velocity function
-            #vel_fn = lambda f: mhd_jax.state_vel(f, param_dict, include_dissipation=False)    
-            #Integrate with adaptive timestepping
-            #f, info = timestepping.eark43(f0, vel_fn, dissipation, T, h=1e-2, atol=adaptive_dict["atol"], max_steps_per_checkpoint=adaptive_dict["max_steps_per_checkpoint"], checkpoints=adaptive_dict["checkpoints"] )
-            f = f0
-            info = None #Change this for adaptive timestepping
+            vel_fn = lambda f: mhd_jax.state_vel(f, param_dict, include_dissipation=False)
+            L_diag = mhd_jax.dissipation(param_dict)
+            adaptive_dict = param_dict["adaptive_dict"]
+            f, info = timestepping.lawson_rk43(f0, vel_fn, L_diag, T, h=1e-2, atol=adaptive_dict["atol"], max_steps_per_checkpoint=adaptive_dict["max_steps_per_checkpoint"], checkpoints=adaptive_dict["checkpoints"] )
+        case "TDRK4":
+            #Two derivative RK4
+            num_checkpoints = param_dict['num_checkpoints']
+            ministeps = param_dict['ministeps']
+            v_fn = lambda f: mhd_jax.state_vel(f,param_dict,include_dissipation=True)
+            integrate = jax.checkpoint( lambda _, f : timestepping.tdrk4(f, T/num_checkpoints, ministeps, v_fn))
+            f = jax.lax.fori_loop( 0, num_checkpoints, integrate, f0)
+            info = None
         case _:
             print(f"You selected mode = {mode}, which does not exist. Exiting...")
             exit()

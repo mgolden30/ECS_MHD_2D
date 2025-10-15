@@ -129,8 +129,6 @@ def state_vel(fields, param_dict, include_dissipation ):
     to_v = param_dict['to_v']
     
     #Extra parameters we also pull from the param_dict
-    nu  = param_dict['nu']
-    eta = param_dict['eta']
     forcing = param_dict['forcing']
     b0 = param_dict['b0']
 

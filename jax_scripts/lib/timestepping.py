@@ -124,22 +124,23 @@ def lawson_rk6(f, t, steps, v_fn, L_diag, mask=None):
         return f + 13/200*(k1+k8) + 4/25*(k3+k7) + 11/40*(k4+k6)
     return jax.lax.fori_loop( 0, steps, update_f, f)
 
-def tdrk4(f, dt, steps, v_fn):
+def tdrk4(f, t, steps, v_fn):
     '''
     Perform forward time evolution with Two Derivative RK4 (TDRK4).
     This integration scheme requires evaulation of the second time derivative,
     which we will achieve with autodiff.
     '''
+    h = t/steps
     #define the Jacobian-vector operator with autodiff
     jac = lambda f, k: jax.jvp( v_fn, primals=(f,), tangents=(k,) )[1]
     def update_f(_, f):
         #Stage 1
-        k1 = dt * v_fn(f)
-        a1 = dt * jac(f, k1)
+        k1 = h * v_fn(f)
+        a1 = h * jac(f, k1)
         #Stage 2
         f_temp = f + k1/2 + a1/8
-        k2 = dt * v_fn(f_temp)
-        a2 = dt * jac(f_temp, k2)
+        k2 = h * v_fn(f_temp)
+        a2 = h * jac(f_temp, k2)
         #quadrature
         f = f + k1 + a1/6 + a2/3
         return f
@@ -147,146 +148,12 @@ def tdrk4(f, dt, steps, v_fn):
     f = jax.lax.fori_loop( 0, steps, update_f, f)
     return f
 
-def runge_kutta_32( x, vel_fn, t, h=1e-2, atol=1e-4):
+def lawson_rk43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps_per_checkpoint=1024, checkpoints=1):
     '''
-    Do explicit time integration with RK3(2)
-    '''
-
-    #Create a dict to specify the state along the while loop
-    #x - current value x(tau)
-    #tau - time integrated so far.
-    #h - timestep
-    #k1 - velocity vector that we save between integration steps
-    #fevals - number of function evaluations
-    loop_state = {"x": x, "tau": 0.0, "h": h, "k1": vel_fn(x), "fevals": 1, "accepted": 0, "rejected": 0}
-
-    # Define loop condition: takes the loop state and returns a boolean
-    def cond_fun(loop_state):
-        return loop_state["tau"] < t
-
-    # Define loop body: takes the loop state and returns a new loop state
-    def body_fun(loop_state):
-        x = loop_state["x"]
-        k1= loop_state["k1"]
-        h = loop_state["h"]
-
-        #Normally I would define k = h*f(x), but h is changing each step
-        k2 = vel_fn(x + h*k1/2)
-        k3 = vel_fn(x + h*k2*3/4)
-        xf = x + h*(2/9*k1 + 3/9*k2 + 4/9*k3 )
-        k4 = vel_fn(xf)
-
-        #Regardless of loop logic, we did three function evaluations 
-        fevals = loop_state["fevals"] + 3
-
-        #Use all four velocity evaluations to estimate the error from this step 
-        err = h*( k1*(3/10-2/9) + k2*(6/25-3/9) + k3*(8/25-4/9) + k4*(7/50-0) )
-        err = jax.numpy.linalg.norm(err)
-
-        #Determine the next timestep
-        h = h * 0.9 * (atol / err)**(1/3)
-
-        #Check if this timestep would overstep our target time
-        tau = loop_state["tau"]
-        h = jax.lax.cond( tau + h > t, lambda _: t - tau, lambda _: h, None )
-
-        accepted = loop_state["accepted"]
-        rejected = loop_state["rejected"]
-
-        #Decide if we accept the step or not
-        #If we accept, we must update both x and tau
-        xf, tau, accepted, rejected = jax.lax.cond( err < atol, lambda _: (xf, tau + h, accepted + 1, rejected), lambda _: (x, tau, accepted, rejected + 1), None )
-
-        #jax.debug.print("tau = {}, h = {}, err = {}, atol = {}", tau, h, err, atol)
-
-        return {"x": xf, "tau": tau, "h": h, "k1": k4, "fevals": fevals, "accepted": accepted, "rejected": rejected}
-
-    loop_state = jax.lax.while_loop(cond_fun, body_fun, loop_state)
-    return loop_state["x"], loop_state["fevals"], loop_state["accepted"], loop_state["rejected"]
-
-
-
-
-def runge_kutta_43( x, vel_fn, t, h=1e-2, atol=1e-4):
-    '''
-    Do explicit time integration with RK4(3). 
+    Adaptively integrate with Lawson RK4. An embedded third order scheme is used to determine a good timestep.
     
-    Integrate a system of ODEs with adaptive timestepping using the following 5-stage Butcher table
-
-    0   |
-    1/3 |  1/3
-    2/3 | -1/3   1
-    1   |  1    -1    1
-    1   |  1/8   3/8  3/8  1/8
-    ________________________________
-        |  1/8   3/8  3/8  1/8  0     #Fourth order
-        |  1/12  1/2  1/4  0    1/6   #Third order
-    ________________________________
-        |  1/24 -1/8  1/8  1/8 -1/6   #Difference for error estimation
-
-    Notice the fifth stage k5 is the same as k1 of the next step (if accepted). This means we only need four function evaluations per step on average.
-    The fourth order scheme is Kutta's 3/8-rule.
-    '''
-
-    #Create a dict to specify the state along the while loop
-    #x - current value x(tau)
-    #tau - time integrated so far.
-    #h - timestep
-    #k1 - velocity vector that we save between integration steps
-    #fevals - number of function evaluations
-    loop_state = {"x": x, "tau": 0.0, "h": h, "k1": vel_fn(x), "fevals": 1, "accepted": 0, "rejected": 0}
-
-    # Define loop condition: takes the loop state and returns a boolean
-    def cond_fun(loop_state):
-        return loop_state["tau"] < t
-
-    # Define loop body: takes the loop state and returns a new loop state
-    def body_fun(loop_state):
-        x = loop_state["x"]
-        k1= loop_state["k1"]
-        h = loop_state["h"]
-
-        #Normally I would define k = h*f(x), but h is changing each step
-        k2 = vel_fn(x + h*k1/3)
-        k3 = vel_fn(x + h*(-k1/3 + k2))
-        k4 = vel_fn(x + h*(k1 - k2 + k3))
-
-        xf = x + h*(k1/8 + k2*3/8 + k3*3/8 + k4/8 )
-        k5 = vel_fn(xf)
-
-
-        #Regardless of loop logic, we did four function evaluations 
-        fevals = loop_state["fevals"] + 4
-
-        #Use all four velocity evaluations to estimate the error from this step 
-        err = h*( k1/24 - k2/8 + k3/8 + k4/8 - k5/6 )
-        err = jax.numpy.linalg.norm(err)
-
-        #Determine the next timestep
-        h = h * 0.9 * (atol / err)**(1/4)
-
-        #Check if this timestep would overstep our target time
-        tau = loop_state["tau"]
-        h = jax.lax.cond( tau + h > t, lambda _: t - tau, lambda _: h, None )
-
-        accepted = loop_state["accepted"]
-        rejected = loop_state["rejected"]
-
-        #Decide if we accept the step or not
-        #If we accept, we must update both x and tau
-        xf, tau, accepted, rejected = jax.lax.cond( err < atol, lambda _: (xf, tau + h, accepted + 1, rejected), lambda _: (x, tau, accepted, rejected + 1), None )
-
-        return {"x": xf, "tau": tau, "h": h, "k1": k5, "fevals": fevals, "accepted": accepted, "rejected": rejected}
-
-    loop_state = jax.lax.while_loop(cond_fun, body_fun, loop_state)
-    return loop_state["x"], loop_state["fevals"], loop_state["accepted"], loop_state["rejected"]
-
-
-
-
-def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps_per_checkpoint=1024, checkpoints=1):
-    '''
-    Integrate forward in time with Exponential Ansatz Runge-Kutta 4(3) (EARK43).
+    This does require repeated evaluation of the exponential of dissipation, which may or may not be acceptable
+    for your use case.
 
     Parameters
     ----------
@@ -337,41 +204,27 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps_per_checkpoint=10
     We assume in this implementation that L is diagonal, but the method described here
     works for all L.
 
-    The method, Exponential Ansatz Runge-Kutta (EARK) makes the educated guess that our 
-    ODEs can be integrated via the equations
-
-    e(y) := expm( h*y*L ) #matrix exponential of prefactor times L
-    k_i  := h*f[ e(c_i) @ x + sum_j a_ij * e(q_ij) @ k_j ]
-    x^+  := e(1) @ x + sum_i b(i) e(r_i) @ k_i
-
-    This looks like ordinary Runge-Kutta, but with troublesome exponential factors in front of 
-    every possible term. This motivates the name Exponential Ansatz Runge-Kutta. An EARK scheme
-    is specified by a_ij, q_ij, b_i, r_i, which can be presented as a modified Butcher table.
-
-    c_i | a_ij | q_ij
-    __________________
-        | b_i  | r_i    
+    Any Runge-Kutta method can be used to generte a Lawson integration scheme.
     
     A fourth order EARK4 scheme must solve 21 nontrivial order conditions. I found a very pretty
     modification of traditional RK4 that accomplishes this. It can be embedded with a third order 
     scheme for easy error estimation and stepsize control. 
-    0   |                           |
-    1/2 |  1/2                      | 1/2
-    1/2 |  0    1/2                 | 0    0
-    1   |  0    0    1              | 0    0    1/2
-    1   |  1/6  1/3  1/3  1/6       | 1    1/2  1/2  0
-    ______________________________________________________
-    4th |  1/6  1/3  1/3  1/6   0   | 1    1/2  1/2  0  0
-    3rd |  1/6  1/3  1/3  1/3  -1/6 | 1    1/2  1/2  0  0
-    ____________________________________________________
-    err |  0    0    0   -1/6   1/6 |
+    0   |                          
+    1/2 |  1/2                      
+    1/2 |  0    1/2                 
+    1   |  0    0    1              
+    1   |  1/6  1/3  1/3  1/6      
+    _________________________________
+    4th |  1/6  1/3  1/3  1/6   0   
+    3rd |  1/6  1/3  1/3  1/3  -1/6 
+    _________________________________
+    err |  0    0    0   -1/6   1/6 
 
-    
 
     Autodiff wisdom
     -------
     To make reverse-mode autodiff stable, I made two changes. I believe both are important.
-    1) stop gradient calculations of h
+    1) stop gradient calculations of h. That is, autodiff sees the time grid as a constant.
     2) reformulate the ODE from dx/dt = f(x) to dx/ds = t*f(x)
     
     Bug fixes
@@ -454,7 +307,6 @@ def eark43( x, vel_fn, diag_L, t, h=1e-2, atol=1e-4, max_steps_per_checkpoint=10
         h = clip_stepsize(h, s)
         h = jax.lax.stop_gradient(h) 
 
-        #return {"x": xf, "s": s, "h": h, "k1": k1, "fevals": fevals, "accepted": accepted, "rejected": rejected, "hs": hs}
         return  (xf, s, h, k1, fevals, accepted, rejected, hs)
 
     #Determine when we completed integration.
