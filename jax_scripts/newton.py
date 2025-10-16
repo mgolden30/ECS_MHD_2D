@@ -24,6 +24,9 @@ import lib.loss_functions as loss_functions
 from lib.linalg import gmres
 import lib.dictionaryIO as dictionaryIO
 import lib.utils as utils
+
+from jax.experimental import io_callback
+
 import os
 
 os.makedirs( "temp_data/newton", exist_ok=True)
@@ -39,8 +42,8 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("temp_data/adjoint_descent/14464.npz")
-input_dict, param_dict = dictionaryIO.load_dicts("temp_data/newton/35.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("temp_data/adjoint_descent/256.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("temp_data/newton/11.npz")
 
 
 ##################
@@ -49,8 +52,8 @@ input_dict, param_dict = dictionaryIO.load_dicts("temp_data/newton/35.npz")
 #mode = "RK4"
 #mode = "Lawson_RK4"
 #mode = "Lawson_RK6"
-#mode = "TDRK4"
-mode = "Lawson_RK43"
+mode = "TDRK4"
+#mode = "Lawson_RK43"
 
 #For adaptive timestepping, modify parameters here
 if mode == "Lawson_RK43":
@@ -63,10 +66,10 @@ if mode == "Lawson_RK43":
     param_dict["adaptive_dict"] = adaptive_dict
 
 
-use_transpose = True  #False solves Ax=b. True solves A^T A x = A^T b
+use_transpose = False  #False solves Ax=b. True solves A^T A x = A^T b
 s_min = 0.0  #What is the smallest singular value you are comfortable inverting. If s_min=0, you just compute the lstsq solution.
 maxit = 1024 #Max iterations
-inner = 8   #Krylov subspace dimension  
+inner = 16   #Krylov subspace dimension  
 outer = 1    #How many times should we restart GMRES? Only do restarts if you literally can't fit a larger Krylov subsapce in memory.
 
 do_line_search = True #When we have a Newton step, should we do a line search in that direction?
@@ -107,68 +110,68 @@ def relative_error_RPO( input_dict, f ):
 ######################################
 # Newton-GMRES starts here
 ######################################
-
-for i in range(maxit):
+@jax.jit
+def newton_gmres_update(i, input_dict):
+    '''
+    Attempt to JIT compile the entire Newton-GMRES update process.
+    This is more of a feat of strength than a strict requirement.
+    '''
+    
     #Evaluate the objective function
     f, f_walltime = run_and_time(obj, input_dict)
 
     #Turn f into a vector
-    f_vec = flatten(f)
+    b = flatten(f)
 
     #Define the Jacobian matrix acting on vectors, not dictionaries
-    if not use_transpose:
-        lin_op = jax.jit(lambda x: flatten(jac(input_dict, unflatten_right(x))))
-        b = f_vec
-    else:
-        A = jax.jit(lambda x: flatten(jac(input_dict, unflatten_right(x))))
+    A = lambda x: flatten(jac(input_dict, unflatten_right(x)))
+    precond = [] #no preconditioners
+    if use_transpose:
         _, jacT = jax.vjp( obj, input_dict, has_aux=False )
-        A_T = jax.jit( lambda v: flatten( jacT(unflatten_left(v)) ) )
-        #Compile it
-        _ = A_T(f_vec)
+        A_T = lambda v: flatten( jacT(unflatten_left(v)) )
+        precond = [A_T] #use the transpose (adjoint) as a preconditioner
 
-        lin_op = lambda x: A_T(A(x))
-        b, transpose_walltime = run_and_time( A_T, f_vec )
-        if i == 0:
-            #Print walltime of the transpose
-            print(f"Transpose walltime = {transpose_walltime:.3f}")
+    #Perform GMRES and time it
+    shape = jax.ShapeDtypeStruct( dtype=jnp.float64, shape=[] )
+    start = io_callback(lambda _ : time.time(), shape, None)
+    b = b.at[0].set(b[0] + 0.0 *start ) #trick lazy evaluation into thinking b depends on start
+    step, gmres_residual = gmres(A, b, inner, outer, preconditioner_list=precond)
+    stop = io_callback(lambda _ : time.time(), shape, gmres_residual) #stop depends on gmres residual
+    gmres_walltime = stop-start
 
-
-
-    #Do GMRES
-    start = time.time()
-    step, gmres_residual = gmres(lin_op, b, inner, s_min, tol=1e-8, preconditioner_list=[], output_index=0 )
-    stop = time.time()
-    gmres_walltime = stop - start
-    
     #update the input_dict
     x, unravel_fn = jax.flatten_util.ravel_pytree( input_dict )
-    
+
     if do_line_search:
-        damp = 1.0
-        for _ in range(20):
-            x_temp = x - damp * step
-            temp_dict = unravel_fn(x_temp)
-            f_temp = obj(temp_dict)
-            f_temp_vec = jax.flatten_util.ravel_pytree(f_temp)[0]
-            if ( jnp.linalg.norm(f_temp_vec) < jnp.linalg.norm(f_vec) ):
-                x = x_temp
-                break
-            damp = damp/2
-        input_dict = unravel_fn(x)
+        x, damp = utils.line_search_unravel(x, step, obj, unravel_fn, b, max_iters=20)
     else:
         damp = default_damp
         x = x - damp*step
-        input_dict = unravel_fn(x)
-
+    input_dict = unravel_fn(x)
 
     #Print all information after the GMRES step
     rel_err = relative_error_RPO(input_dict, f)
-    print(f"Iteration {i}: rel_err={rel_err:.3e}, |f|={jnp.linalg.norm(f_vec):.3e}, fwall={f_walltime:.3f}, gmreswall={gmres_walltime:.3f}, gmres_rel_res={gmres_residual:.3e}, damp={damp:.3e}, T={input_dict['T']:.3e}, sx={input_dict['sx']:.3e}")
-
+    #jax.debug.print(f"Iteration {i}: rel_err={rel_err:.3e}, |f|={jnp.linalg.norm(b):.3e}, fwall={f_walltime:.3f}, gmreswall={gmres_walltime:.3f}, gmres_rel_res={gmres_residual:.3e}, damp={damp:.3e}, T={input_dict['T']:.3e}, sx={input_dict['sx']:.3e}")
+    jax.debug.print(
+        "Iteration {}: rel_err={:.3e}, |f|={:.3e}, fwall={:.3f}, gmreswall={:.3f}, gmres_rel_res={:.3e}, damp={:.3e}, T={:.3e}, sx={:.3e}",
+        i,
+        rel_err,
+        jnp.linalg.norm(b),
+        f_walltime,
+        gmres_walltime,
+        gmres_residual,
+        damp,
+        input_dict["T"],
+        input_dict["sx"],   
+    )
+    
     #Dealias after every Newton step
     fields = input_dict['fields']
     fields = param_dict['mask'] * jnp.fft.rfft2(fields)
     fields = jnp.fft.irfft2(fields)
     input_dict['fields'] = fields
+    return input_dict
 
+for i in range(maxit):
+    input_dict = newton_gmres_update(i, input_dict)
     dictionaryIO.save_dicts( f"temp_data/newton/{i}", input_dict, param_dict )

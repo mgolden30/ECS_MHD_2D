@@ -1,5 +1,5 @@
 '''
-The default implementation of jax.scipy.sparse.linalg.gmres is flawed and gives memory bugs for no reason.
+The default implementation of jax.scipy.sparse.linalg.gmres appears to be flawed and gives memory bugs for no reason.
 Here we implement our own GMRES routines.
 '''
 
@@ -7,85 +7,94 @@ import jax
 import jax.flatten_util
 import jax.numpy as jnp
 
-from scipy.io import savemat
+from scipy.io import savemat #For debugging
 
-
-
-def gmres(A, b, m, s_min, tol=1e-8, preconditioner_list=[], output_index=0 ):
+def gmres(A, b, inner, outer=1, preconditioner_list=[] ):
     '''
-    PURPOSE:
-    Solve the linear system Ax=b by constructing a Krylov subspace.
-    
-    INPUT:
-    A - a linear operator
-    b - right hand side vector
-    m - dimension of Krylov subspace
-    Q0 - initial vector of Q
+    Generalized Minimal RESidual (GMRES) method for solving Ax=b
 
-    preconditioner_list - an arbitrary length list of preconditioners (M1, M2, ...) to apply to the linear system.
-    GMRES is then applied to the system  Mn*...*M2*M1*A*x = Mn*...*M2*M1*b
-    Each M is a function handle so it evaluates via M(v)
+    A matrix-free iterative method for approximately solving the linear 
+    system Ax=b. Construct an orthonormal basis with power iteration of A
+    and minimize the L_2 error for a solution constrained to this subspace.
+    The goal of this implementation is to be JIT-able
+    
+    Parameters
+    ----------
+    A : callable
+        Function that returns a matrix-vector product
+    b : ndarray
+        The right hand side vector of Ax=b. Assumed to be flat.
+    inner : int
+        Dimension of the Krylov subspace / number of times A will be evaluated
+    outer : int
+        Number of times to restart Krylov subspace generation.
+        Restarting is a generally terrible idea in my experience.
+        Only do multiple outer iterations if you are memory limited and desparate.
+    preconditioner_list : List of callables 
+        an arbitrary length list of preconditioners (M1, M2, ...) to apply to the linear system.
+        GMRES is then applied to the system  Mn*...*M2*M1*A*x = Mn*...*M2*M1*b
+        Each M is a function handle so it evaluates via M(v)
     '''
         
     n = b.size #number of elements in this square system
-    Q = jnp.zeros((n, m+1))
-    H = jnp.zeros((m+1, m))
+    Q = jnp.zeros((n, inner+1))
+    H = jnp.zeros((inner+1, inner))
 
-    #Apply preconditioners to both b and Q0
-    for M in preconditioner_list:
-        b  = M(b)
-        Q0 = M(Q0)
+    #Define JIT-able preconditioning
+    #precond_i = lambda i, v : preconditioner_list[i](v)
+    if len(preconditioner_list) > 0:
+        #precond = lambda v : jax.lax.fori_loop( 0, len(preconditioner_list), precond_i, v)
+        def precond(v):
+            def body(i, v):
+                return jax.lax.switch(i, preconditioner_list, v)
+            return jax.lax.fori_loop(0, len(preconditioner_list), body, v)
+    else:
+        precond = lambda v : v
 
-    Q = Q.at[:,0].set( b / jnp.linalg.norm(b) )
+    #Apply preconditioners to right hand side
+    b = precond(b)
     
-    #A unit vector e1
-    e1 = jnp.zeros([m+1,]).at[0].set(1)
+    #Use the right hand side to generate the Krylov subspace
+    Q = Q.at[:,0].set( b / jnp.linalg.norm(b) )
 
     def orthogonalize(u,v):
-        #Prevent code redundancy.
-        w = jnp.dot(u,v)
-        u = u - w*v
-        return w, u
+        dot = jnp.dot(u,v)
+        u = u - dot*v
+        return dot, u
 
-    for k in range(m):
+    def arnoldi_iteration(k, state):
+        Q, H = state
         Aq = A(Q[:,k])
-        for M in preconditioner_list:
-            Aq = M(Aq)
-
-        for j in range(k+1):
+        Aq = precond(Aq)
+    
+        def update(j, state):
+            Aq, H = state
             hj, Aq = orthogonalize( Aq, Q[:,j])
             H = H.at[j, k].set(hj)
-            
-        #Reorthogonalize a couple of times
-        for _ in range(2):
-            for j in range(k+1):
-                _, Aq = orthogonalize( Aq, Q[:,j])
-            
+            return Aq, H
+        
+        #Orthogonalize with respect to all previous vectors
+        Aq, H = jax.lax.fori_loop(0,k+1,update, (Aq,H))
+
+        #Optionally reorthogonalize for numerical stability
+        #TODO
+
+        #Use the rest of Aq to define the next basis vector
         hk1 = jnp.linalg.norm(Aq)
         H = H.at[k+1, k].set(hk1)
         Q = Q.at[:,k+1].set(Aq / hk1)
+        return Q, H
 
+    #Generate a Krylov subspace
+    Q, H = jax.lax.fori_loop(0, inner, arnoldi_iteration, (Q,H)) 
+    
     #Project b onto the orthonormal basis
     b2 = Q.transpose() @ b
-
-    if s_min == 0:
-        y, _, _, _ = jnp.linalg.lstsq(H, b2, rcond=None)
-    else:
-        #There is some singular value threshold we should respect
-        U, s, Vh = jnp.linalg.svd(H, full_matrices=False)
-        b2 = U.T @ b2
-        inv_s = 1 / s
-        inv_s = inv_s.at[ s < s_min ].set(1) #NEVER INCREASE THE SIZE OF A STABLE DIRECTION
-        b2 = b2 * inv_s
-        y  = Vh.T @ b2
-        
-    filename = f"gmres_debug_{output_index}.mat"
-    savemat(filename, {"H": H, "b": b2, "f": b, "Q": Q})
-
-    x = Q[:, :m] @ y
+    y, _, _, _ = jnp.linalg.lstsq(H, b2, rcond=None)
+    x = Q[:, :inner] @ y
 
     #Compute the relative residual the lazy (but accurate) way
-    rel_res = jnp.linalg.norm( A(x) - b )/jnp.linalg.norm(b)
+    rel_res = jnp.linalg.norm( precond(A(x)) - b )/jnp.linalg.norm(b)
     return x, rel_res
 
 
