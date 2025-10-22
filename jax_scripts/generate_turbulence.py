@@ -21,7 +21,7 @@ os.makedirs( "figures/", exist_ok=True)
 ######################
 # DNS parameters
 ######################
-n  = 256    #grid resolution
+n  = 128    #grid resolution
 dt = 1/256  #size of timestep
 precision = jnp.float64 #double or single precision
 
@@ -30,9 +30,9 @@ steps = 256 #How many snapshots of turbulence do you want to save?
 transient_steps = 1024*2*4 #How many timesteps should we take before saving any data?
 
 
-nu  = 1/50 #Fluid dissipation
-eta = 1/50 #Magnetic dissipation
-b0  = [0.0, 0.1] # Mean magnetic field 
+nu  = 1/40 #Fluid dissipation
+eta = 1/40 #Magnetic dissipation
+b0  = [0.0, 0.3] # Mean magnetic field 
 
 # If you want double precision, change JAX defaults
 if (precision == jnp.float64):
@@ -45,10 +45,13 @@ param_dict = mhd_jax.construct_domain(n, precision)
 x = param_dict['x']
 y = param_dict['y']
 
+
 forcing = -4*jnp.cos(4*y)
+param_dict['forcing_str'] = "lambda x,y : -4*jnp.cos(4*y)"
+
 
 #Generate random initial data. 
-key = jax.random.PRNGKey(seed=2222214)
+key = jax.random.PRNGKey(seed=111111)
 f = 10*jax.random.normal( key, shape=[2,n,n] )
 
 #Alternatively, specify analytic initial data if your heart desires

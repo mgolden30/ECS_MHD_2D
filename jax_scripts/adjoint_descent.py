@@ -33,7 +33,7 @@ os.makedirs( "temp_data/adjoint_descent", exist_ok=True)
 precision = jnp.float64
 filename = "temp_data/turb.npz" #Set to "turb.npz" for a new state or "data/adjoint_descent_8.npz" for example if you want to restart optimization for an old state
 #filename = "temp_data/adjoint_descent/512.npz" 
-idx = [121, 146] #If filename == "turb.npz", then these will determine the initial guess of the RPO from turbulence 
+idx = [109, 138] #If filename == "turb.npz", then these will determine the initial guess of the RPO from turbulence 
 lr = 1e-2 #Learning rate of ADAM
 maxit = 16*1024 #Maximum number of ADAM steps
 save_every = 64 #Save the fluid state after this many ADAM steps.
@@ -119,4 +119,5 @@ for t in range(maxit):
 
     #Save the state every so often
     if ( t % save_every == 0 ):
-        dictionaryIO.save_dicts( f"temp_data/adjoint_descent/{t}.npz", input_dict, param_dict )
+        remove_bloat = lambda param_dict : dictionaryIO.remove_grid_information(param_dict)
+        dictionaryIO.save_dicts( f"temp_data/adjoint_descent/{t}.npz", input_dict, remove_bloat(param_dict) )

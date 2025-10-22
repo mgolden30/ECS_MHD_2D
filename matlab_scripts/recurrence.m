@@ -25,7 +25,7 @@ open(vidObj);
 
 
 set(gcf, "color", "black");
-for i = 1:size(fs,1)
+for i = 109:138%1:size(fs,1)
   clf;
   tiledlayout(1,2);
   vis( squeeze(fs(i,:,:,:)) );

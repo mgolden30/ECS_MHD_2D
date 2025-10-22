@@ -42,10 +42,9 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-#input_dict, param_dict = dictionaryIO.load_dicts("temp_data/adjoint_descent/256.npz")
-#input_dict, param_dict = dictionaryIO.load_dicts("temp_data/newton/11.npz")
-
-input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re40/TW2.npz")
+input_dict, param_dict = dictionaryIO.load_dicts("temp_data/adjoint_descent/4672.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("temp_data/newton/1.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re40/TW2.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("temp_data/newton/1.npz")
 
 
@@ -82,10 +81,10 @@ if mode == "Lawson_RK43":
     param_dict["adaptive_dict"] = adaptive_dict
 
 
-use_transpose = False  #False solves Ax=b. True solves A^T A x = A^T b
+use_transpose = True  #False solves Ax=b. True solves A^T A x = A^T b
 s_min = 0.0  #What is the smallest singular value you are comfortable inverting. If s_min=0, you just compute the lstsq solution.
-maxit = 1#024 #Max iterations
-inner = 2   #Krylov subspace dimension  
+maxit = 1024 #Max iterations
+inner = 16   #Krylov subspace dimension  
 outer = 1    #How many times should we restart GMRES? Only do restarts if you literally can't fit a larger Krylov subsapce in memory.
 
 do_line_search = True #When we have a Newton step, should we do a line search in that direction?
@@ -110,11 +109,34 @@ flatten = lambda x: jax.flatten_util.ravel_pytree(x)[0]
 _, unflatten_left  = jax.flatten_util.ravel_pytree(f)
 _, unflatten_right = jax.flatten_util.ravel_pytree(input_dict)
 
-def run_and_time( fn, x ):
-    start = time.time()
-    y = fn(x)
-    stop = time.time()
-    return y, stop-start
+
+
+
+def run_and_time( f, x ):
+    '''
+    JAX has lazy evaluation, which makes benchmarking a huge pain.
+    This runs a function f(x) and returns the output and walltime.
+    
+    PARAMETERS
+    ----------
+    f : callable
+        the function you want to evaluate
+    x : array
+        Argument of the function.
+    '''
+
+    #io_callback requires a shape struct for the returned tensor
+    shape = jax.ShapeDtypeStruct( dtype=jnp.float64, shape=[] )
+    start = io_callback(lambda _ : time.time(), shape, None)
+    #x = x.at[0].set(x[0] + 0.0*start ) #trick lazy evaluation into thinking b depends on start
+    wrapper = lambda _ : f(x)
+    y = wrapper(start)
+    stop = io_callback(lambda _ : time.time(), shape, y) #stop depends on output of the function
+    walltime = stop - start
+    #start = time.time()
+    #y = fn(x)
+    #stop = time.time()
+    return y, walltime
 
 def relative_error_RPO( input_dict, f ):
     norm = lambda x: jnp.sqrt(jnp.sum( jnp.square(x)) )
@@ -148,12 +170,16 @@ def newton_gmres_update(i, input_dict):
         precond = [A_T] #use the transpose (adjoint) as a preconditioner
 
     #Perform GMRES and time it
+    '''
     shape = jax.ShapeDtypeStruct( dtype=jnp.float64, shape=[] )
     start = io_callback(lambda _ : time.time(), shape, None)
     b = b.at[0].set(b[0] + 0.0 *start ) #trick lazy evaluation into thinking b depends on start
     step, gmres_residual = gmres(A, b, inner, outer, preconditioner_list=precond)
     stop = io_callback(lambda _ : time.time(), shape, gmres_residual) #stop depends on gmres residual
     gmres_walltime = stop-start
+    '''
+    gmres_fn = lambda b : gmres(A, b, inner, outer, preconditioner_list=precond)
+    (step, gmres_residual), gmres_walltime = run_and_time( gmres_fn, b )
 
     #update the input_dict
     x, unravel_fn = jax.flatten_util.ravel_pytree( input_dict )
