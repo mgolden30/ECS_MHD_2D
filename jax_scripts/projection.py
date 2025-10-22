@@ -11,6 +11,10 @@ import lib.dictionaryIO as dictionaryIO
 from scipy.io import savemat
 from pathlib import Path
 
+precision = jnp.float64  # Double or single precision
+# If you want double precision, change JAX defaults
+if (precision == jnp.float64):
+    jax.config.update("jax_enable_x64", True)
 
 def compute_observables( f, param_dict ):
     '''
@@ -76,6 +80,10 @@ projection = {}
 for file in directory.rglob("*.npz"):
     print(file)
     input_dict, param_dict = dictionaryIO.load_dicts(file)
+
+    param_dict = dictionaryIO.recompute_grid_information(input_dict, param_dict)
+    
+    
     
     #Move to Fourier space
     f = jnp.fft.rfft2(input_dict['fields'])

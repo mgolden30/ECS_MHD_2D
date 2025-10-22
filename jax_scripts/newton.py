@@ -42,8 +42,24 @@ precision = jnp.float64  # Double or single precision
 if (precision == jnp.float64):
     jax.config.update("jax_enable_x64", True)
 
-input_dict, param_dict = dictionaryIO.load_dicts("temp_data/adjoint_descent/256.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("temp_data/adjoint_descent/256.npz")
 #input_dict, param_dict = dictionaryIO.load_dicts("temp_data/newton/11.npz")
+
+input_dict, param_dict = dictionaryIO.load_dicts("solutions/Re40/TW2.npz")
+#input_dict, param_dict = dictionaryIO.load_dicts("temp_data/newton/1.npz")
+
+
+legacy_format = False
+if legacy_format:
+    ministeps = 32
+    assert( param_dict['steps'] % ministeps == 0 )
+    param_dict.update({"ministeps": ministeps, "num_checkpoints": param_dict['steps']//ministeps })
+    param_dict.update({'shift_reflect_ny': 0, 'rot': False})
+    input_dict['sx'] = -input_dict['sx']
+
+#param_dict['forcing_str'] = "lambda x,y : -4*jnp.cos(4*y)"
+param_dict = dictionaryIO.recompute_grid_information(input_dict, param_dict)
+
 
 
 ##################
@@ -68,8 +84,8 @@ if mode == "Lawson_RK43":
 
 use_transpose = False  #False solves Ax=b. True solves A^T A x = A^T b
 s_min = 0.0  #What is the smallest singular value you are comfortable inverting. If s_min=0, you just compute the lstsq solution.
-maxit = 1024 #Max iterations
-inner = 16   #Krylov subspace dimension  
+maxit = 1#024 #Max iterations
+inner = 2   #Krylov subspace dimension  
 outer = 1    #How many times should we restart GMRES? Only do restarts if you literally can't fit a larger Krylov subsapce in memory.
 
 do_line_search = True #When we have a Newton step, should we do a line search in that direction?
@@ -173,5 +189,9 @@ def newton_gmres_update(i, input_dict):
     return input_dict
 
 for i in range(maxit):
+    #Peform the newton step
     input_dict = newton_gmres_update(i, input_dict)
-    dictionaryIO.save_dicts( f"temp_data/newton/{i}", input_dict, param_dict )
+
+    #Save the state out
+    remove_bloat = lambda param_dict : dictionaryIO.remove_grid_information(param_dict)
+    dictionaryIO.save_dicts( f"temp_data/newton/{i}", input_dict, remove_bloat(param_dict) )
