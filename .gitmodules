@@ -1,3 +1,6 @@
 [submodule "candidates"]
 	path = candidates
 	url = https://github.com/mgolden30/MHD_candidate_solutions
+[submodule "floquet"]
+	path = floquet
+	url = git@github.com:mgolden30/Floquet_MHD_ECS_2D
