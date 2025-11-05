@@ -26,7 +26,7 @@ import numpy as np
 
 #State to animate
 filename = "temp_data/newton/4.npz"
-#filename = "solutions/Re50/1.npz"
+filename = "solutions/Re40/RPO6.npz"
 #filename = "candidates/Re100/1.npz"
 #filename = "temp_data/newton/3.npz"
 
@@ -48,6 +48,10 @@ font_color = "white"
 
 
 input_dict, param_dict = dictionaryIO.load_dicts(filename)
+
+#Reconstruct the grid
+param_dict = dictionaryIO.recompute_grid_information(input_dict, param_dict)
+
 
 print((input_dict["sx"], param_dict["shift_reflect_ny"], param_dict["rot"]))
 

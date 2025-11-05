@@ -1,5 +1,54 @@
-clear;
+%{
+This script visualizes an RPO
+%}
 
+clear;
+addpath("helper/")
+
+%PARAMETERS
+filename = "../solutions/Re40/RPO1.npz";
+display_colorbar = false;
+cmax = [6,6]; %max colorbar for vorticity and current
+
+
+
+%Load data
+[fields, T, symmetry, params] = read_npz(filename);
+
+%visualize the initial data
+visualize_fields(fields, cmax, display_colorbar);
+colormap blueblackred
+drawnow;
+
+%Decide how often to plot
+ministeps = 32;
+assert(mod(params.steps, ministeps) == 0);
+snapshots = round(params.steps / ministeps);
+
+n = size(fields,1);
+fs = zeros(n,n,2,snapshots);
+fs(:,:,:,1) = fields;
+
+fprintf("Generating trajectory...\n");
+tic
+for i = 1:snapshots-1
+    fs(:,:,:,i+1) = lawson_rk4( fs(:,:,:,i), T/snapshots, ministeps, params );
+end
+walltime = toc;
+fprintf("Completed in %.3f seconds...", walltime);
+
+%%
+while(true)
+  for i = 1:snapshots-1
+    %visualize_fields(fs(:,:,:,i), [6,6], display_colorbar);
+    visualize_fields(fs(1:2:end,1:2:end,:,i), [6,6], display_colorbar);
+    drawnow;
+  end
+end
+
+return
+
+clear;
 %load("data/converged_RPO_14721.mat")
 
 %T

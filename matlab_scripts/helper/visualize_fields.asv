@@ -1,0 +1,44 @@
+function visualize_fields(fields, cmax, display_colorbar)
+  %{
+  PURPOSE:
+  Make a standard visualization of the fields tensor from 
+  my MHD simulations.
+
+  INPUT:
+  fields - shape [n,n,2] tensor containing curl(u) and curl(B)
+  %}
+  
+  titles = {"$\nabla \times {\bf u}$", "$\nabla \times {\bf B}$"}
+  font_size = 32;
+
+  tiledlayout(1,2);
+
+  for i = 1:2
+      nexttile;
+      
+      %Draw the field
+      imagesc(fields(:,:,i));
+        
+      %Make aspect ratio 1:1
+      axis square;
+
+      %Make y point up instead of down
+      set(gca, "ydir", "normal");
+
+      %Provide a colorbar
+      if display_colorbar
+        colorbar();
+      end
+   
+      %Lock the colorbar limits
+      clim( [-1,1] * cmax(i) );
+
+      %Turn off ticks
+      set(gca, 'XTick', [], 'YTick', []);
+
+      %Add a title for each field
+      title(titles{i}, "interpreter", "latex", "color", "w", "fontsize", font_size);
+  
+    
+  end
+end
