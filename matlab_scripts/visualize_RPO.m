@@ -6,10 +6,10 @@ clear;
 addpath("helper/")
 
 %PARAMETERS
-filename = "../solutions/Re40/RPO1.npz";
+filename = "../solutions/Re40/RPO6.npz";
 display_colorbar = false;
 cmax = [6,6]; %max colorbar for vorticity and current
-
+comoving = true;
 
 
 %Load data
@@ -38,10 +38,27 @@ walltime = toc;
 fprintf("Completed in %.3f seconds...", walltime);
 
 %%
+
+kx = 0:n-1;
+kx(kx > n/2) = kx(kx > n/2) -n;
+kx = reshape(kx, [1,n]);
+
+sx = symmetry.sx;
+if sx > pi
+  sx = sx - 2*pi;
+end
+
 while(true)
   for i = 1:snapshots-1
-    %visualize_fields(fs(:,:,:,i), [6,6], display_colorbar);
-    visualize_fields(fs(1:2:end,1:2:end,:,i), [6,6], display_colorbar);
+    data = fs(:,:,:,i);
+    
+    if comoving
+      data = fft2(data); 
+      data = exp( 1i * kx * sx * (i-1)/snapshots ) .* data;
+      data = real(ifft2(data));
+    end
+
+    visualize_fields(data, cmax, display_colorbar);
     drawnow;
   end
 end

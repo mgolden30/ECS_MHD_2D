@@ -1,6 +1,7 @@
 clear;
 
-load("../temp_data/dist.mat");
+%load("../temp_data/dist.mat");
+load("dist (3).mat");
 
 clf;
 set(gcf, "color", "w");
@@ -44,6 +45,7 @@ close(vidObj);
 idx = [156, 170];
 
 idx = [232, 242];
+idx= [146, 166];
 
 dt = 1/256;
 ministeps = 64;
