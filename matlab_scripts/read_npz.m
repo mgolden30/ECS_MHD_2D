@@ -8,6 +8,8 @@ function [fields, T, symmetry, params] = read_npz(filename)
   T      = py2mat(data.get('T'));
 
   symmetry.sx = py2mat(data.get('sx'));
+  symmetry.shift_reflect_ny = py2mat(data.get('shift_reflect_ny'));
+  symmetry.rot = py2mat(data.get('rot'));
 
   %Other useful parameters
   params.b0    = py2mat(data.get('b0'));

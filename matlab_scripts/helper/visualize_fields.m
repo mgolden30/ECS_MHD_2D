@@ -11,7 +11,7 @@ function visualize_fields(fields, cmax, display_colorbar)
   titles = {"$\nabla \times {\bf u}$", "$\nabla \times {\bf B}$"};
   font_size = 32;
 
-  tiledlayout(1,2);
+  tiledlayout(1,3);
 
   for i = 1:2
       nexttile;
