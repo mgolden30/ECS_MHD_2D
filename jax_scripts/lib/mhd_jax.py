@@ -174,16 +174,28 @@ def state_vel(fields, param_dict, include_dissipation ):
 
     return dfdt
 
-def vis(f):    
-    figure, axis = plt.subplots(1,2)
+def vis(f, in_spectral=True, title=None):
+    figure, axis = plt.subplots(1, 2, figsize=(8, 4), constrained_layout=True)
 
-    f = jnp.fft.irfft2(f)
+    if in_spectral:
+        f = jnp.fft.irfft2(f)
 
-    axis[0].imshow( f[0,:,:].transpose(), vmin=-10, vmax=10, cmap='bwr', origin='lower')
-    axis[0].set_title("vorticity")
-    
-    axis[1].imshow( f[1,:,:].transpose(), vmin=-10, vmax=10, cmap='bwr', origin='lower' )
-    axis[1].set_title("current")
+    vmin, vmax = -10, 10
+    extent = [0, 2*jnp.pi, 0, 2*jnp.pi]
+    ticks = [0, jnp.pi, 2*jnp.pi]
+    ticklabels = ["0", r"$\pi$", r"$2\pi$"]
+
+    for ax, data, name in zip(axis, f, ["vorticity", "current"]):
+        im = ax.imshow(data.transpose(), vmin=vmin, vmax=vmax, cmap='bwr',
+                        origin='lower', extent=extent, aspect='equal')
+        ax.set_title(name)
+        ax.set_xticks(ticks); ax.set_xticklabels(ticklabels)
+        ax.set_yticks(ticks); ax.set_yticklabels(ticklabels)
+        figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04, ticks=[vmin, 0, vmax])
+
+    if title is not None:
+        figure.suptitle(title)
+
     return figure, axis
 
 

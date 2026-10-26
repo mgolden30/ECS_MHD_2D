@@ -1,0 +1,18 @@
+[project]
+name = "ecs-mhd-2d"
+version = "0.1.0"
+description = "Exact Coherent Structures in 2D MHD"
+requires-python = "==3.13.*"
+dependencies = [
+    "jax",
+    "matplotlib",
+    "scipy",
+    "imageio[ffmpeg]",
+    "jupyterlab",
+    "ipympl",
+]
+
+[project.optional-dependencies]
+cuda = [
+    "jax[cuda12]",
+]
