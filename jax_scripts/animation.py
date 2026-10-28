@@ -17,37 +17,34 @@ import lib.dictionaryIO as dictionaryIO
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 
-
-
-
 ####################
 # PARAMETERS
 ####################
 
 #State to animate
-filename = "temp_data/newton/4.npz"
-filename = "solutions/Re40/RPO6.npz"
-#filename = "candidates/Re100/1.npz"
-#filename = "temp_data/newton/3.npz"
+#filename = "temp_data/tutorial_output.npz"
+filename = "temp_data/tutorial_gn_output.npz"
 
 
-save_every = 32 #How often do we save a frame?
+save_every = 16 #How often do we save a frame?
 fps = 8 #frames per second
 vmin = -10.0 #colorbar limits
 vmax = 10.0 #colorbar limits
 comoving = False
 double_domain = False
-add_last_frame = True #Set to false for perfect periodic video
+double_period = False #USEFUL FOR SOME RPOs
+add_last_frame = False #Set to false for perfect periodic video
 
 bg_color = "black"
 font_color = "white"
 
 
-
-
-
-
 input_dict, param_dict = dictionaryIO.load_dicts(filename)
+
+if double_period:
+    print("warning: doubling the period for visualization...")
+    input_dict["T"] = 2 * input_dict["T"]
+    param_dict["steps"] = 2* param_dict["steps"]
 
 #Reconstruct the grid
 param_dict = dictionaryIO.recompute_grid_information(input_dict, param_dict)
